@@ -491,4 +491,5 @@ vez no próprio PC, validada localmente e protegida com DPAPI; ela nunca é
 incluída no APK, no Wake-on-LAN nem no hub. Os provedores normais de PIN e Senha
 do Windows permanecem disponíveis para recuperação.
 #   n e b u - a s s i s t e n t  
+ #   n e b u - a s s i s t e n t  
  
