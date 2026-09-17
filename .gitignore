@@ -1,0 +1,263 @@
+# ============================================================
+# NEBULA - .gitignore
+# ============================================================
+
+
+# ------------------------------------------------------------
+# PYTHON
+# ------------------------------------------------------------
+
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Ambientes virtuais
+.venv/
+venv/
+env/
+ENV/
+
+
+# ------------------------------------------------------------
+# SEGREDOS / VARIÁVEIS DE AMBIENTE
+# ------------------------------------------------------------
+
+.env
+.env.*
+!.env.example
+
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Credenciais / configurações privadas da Nebula
+tinytuya.json
+tuya-raw.json
+devices.json
+
+# Arquivos potencialmente contendo dados locais/sensíveis
+snapshot.json
+**/entrada-senha-anterior.json
+**/resultado-entrada-senha.txt
+**/resultado-instalacao.txt
+
+
+# ------------------------------------------------------------
+# PYINSTALLER / BUILDS DA NEBULA
+# ------------------------------------------------------------
+
+build/
+build_*/
+dist/
+dist_*/
+
+**/build_*/
+**/dist/
+
+*.pkg
+
+# Mantemos arquivos .spec no Git
+# *.spec NÃO é ignorado
+
+
+# ------------------------------------------------------------
+# RELEASES / BINÁRIOS GERADOS
+# ------------------------------------------------------------
+
+*.exe
+*.apk
+*.zip
+
+# Bibliotecas compiladas
+*.dll
+*.so
+*.dylib
+
+# Símbolos/debug
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.iobj
+*.ipdb
+
+
+# ------------------------------------------------------------
+# ANDROID / GRADLE
+# ------------------------------------------------------------
+
+.gradle/
+.gradle-local/
+
+**/.gradle/
+**/.gradle-local/
+
+android/app/build/
+android/build/
+
+**/android/app/build/
+**/android/build/
+
+android/local.properties
+
+# Gradle Wrapper deve permanecer versionado:
+# android/gradlew
+# android/gradlew.bat
+# android/gradle/wrapper/gradle-wrapper.jar
+# android/gradle/wrapper/gradle-wrapper.properties
+
+
+# ------------------------------------------------------------
+# C# / .NET / SIMHUB
+# ------------------------------------------------------------
+
+**/bin/
+**/obj/
+
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+.vs/
+
+
+# ------------------------------------------------------------
+# C / C++ / VISUAL STUDIO
+# ------------------------------------------------------------
+
+**/Debug/
+**/Release/
+**/x64/
+**/x86/
+
+*.obj
+*.pch
+*.idb
+*.ipch
+*.tlog
+*.lastbuildstate
+
+# Cache Visual Studio
+.vs/
+ipch/
+
+
+# ------------------------------------------------------------
+# BUILDS ESPECÍFICOS DA NEBULA
+# ------------------------------------------------------------
+
+**/agent_build/
+**/work_build/
+
+native/nebula_credential_provider/SampleV2.98E74D71/
+native/nebula_credential_provider/x64/
+
+
+# ------------------------------------------------------------
+# MINECRAFT / MODPACKS / ARQUIVOS GRANDES
+# ------------------------------------------------------------
+
+*.mrpack
+*.jar
+
+# Saves / mundos caso sejam colocados aqui futuramente
+*.mca
+
+minecraft_migration/server/
+minecraft_migration/world/
+minecraft_migration/logs/
+
+
+# ------------------------------------------------------------
+# NODE / JAVASCRIPT
+# ------------------------------------------------------------
+
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+
+# ------------------------------------------------------------
+# IDEs / EDITORES
+# ------------------------------------------------------------
+
+.vscode/
+.idea/
+
+*.code-workspace
+
+
+# ------------------------------------------------------------
+# WINDOWS
+# ------------------------------------------------------------
+
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+
+$RECYCLE.BIN/
+
+
+# ------------------------------------------------------------
+# macOS
+# ------------------------------------------------------------
+
+.DS_Store
+.AppleDouble
+.LSOverride
+
+
+# ------------------------------------------------------------
+# LOGS / TEMPORÁRIOS
+# ------------------------------------------------------------
+
+*.log
+*.tmp
+*.temp
+*.bak
+*.old
+*.cache
+
+temp/
+tmp/
+logs/
+
+
+# ------------------------------------------------------------
+# ARQUIVOS DE TESTE/SAÍDA GERADOS AUTOMATICAMENTE
+# ------------------------------------------------------------
+
+*.pyz
+*.toc
+*.recipe
+
+# ------------------------------------------------------------
+# EXCEÇÕES ESPECÍFICAS
+# ------------------------------------------------------------
+
+# Assets da Nebula devem ser versionados
+!assets/
+!assets/**
+
+# Gradle Wrapper deve ser versionado
+!android/gradle/
+!android/gradle/wrapper/
+!android/gradle/wrapper/gradle-wrapper.jar
+!android/gradle/wrapper/gradle-wrapper.properties
+!android/gradlew
+!android/gradlew.bat

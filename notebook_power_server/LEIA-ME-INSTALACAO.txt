@@ -1,0 +1,21 @@
+NEBULA HOME HUB 1.21.0
+
+1. Abra esta pasta diretamente no notebook.
+2. Clique com o botao direito em INSTALAR-COMO-ADMINISTRADOR.cmd.
+3. Escolha Executar como administrador.
+4. Aguarde a mensagem de sucesso e pressione uma tecla.
+
+O instalador substitui a versao anterior sem apagar o mundo do Minecraft,
+mantem a Qwen desativada e inicia o hub automaticamente com o Windows.
+
+O celular deve usar o hub do notebook em http://192.168.15.86:8766.
+
+Ao ligar o PC pelo celular, o hub aguarda 45 segundos. Se o PC gamer nao
+responder, NebulaNotebook.exe abre automaticamente neste notebook.
+
+Esta versao adiciona controle em grupo das Smart TVs Samsung e LG,
+incluindo abertura simultanea de links e buscas do YouTube.
+
+O ar Voltas agora e controlado diretamente pelo Smart IR no Wi-Fi, sem eKasa,
+USB ou ADB. Depois desta instalacao, as proximas atualizacoes do hub sao
+recebidas e aplicadas automaticamente.

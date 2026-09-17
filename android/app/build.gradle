@@ -1,0 +1,22 @@
+plugins { id 'com.android.application' }
+
+def versionSource = file('../../versao.py').getText('UTF-8')
+def versionMatch = versionSource =~ /VERSAO_NEBULA\s*=\s*["']([0-9]+\.[0-9]+\.[0-9]+)["']/
+if (!versionMatch.find()) {
+    throw new GradleException('VERSAO_NEBULA não foi encontrada em versao.py')
+}
+def nebulaVersionName = versionMatch.group(1)
+def versionParts = nebulaVersionName.tokenize('.').collect { it as int }
+def nebulaVersionCode = versionParts[0] * 10000 + versionParts[1] * 100 + versionParts[2]
+
+android {
+    namespace 'com.nebula.assistant'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'com.nebula.assistant'
+        minSdk 26
+        targetSdk 35
+        versionCode nebulaVersionCode
+        versionName nebulaVersionName
+    }
+}

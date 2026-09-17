@@ -1,0 +1,16 @@
+SpeechRecognition>=3.14,<4
+pywin32>=312
+Pillow>=11.3,<13
+pystray>=0.19.5,<1
+edge-tts>=7.2,<8
+requests>=2.32,<3
+tinytuya>=1.20,<2
+yt-dlp>=2026.8,<2027
+hidapi>=0.15,<1
+openrgb-python>=0.3.4,<1
+websocket-client>=1.8,<2
+cryptography>=50,<51
+PyAudio>=0.2.14; python_version < "3.14"
+PyAudioWPatch>=0.2.12.8; python_version >= "3.14" and sys_platform == "win32"
+pycaw>=20251023; sys_platform == "win32"
+winrt-Windows.Media.Control>=3.2,<4; sys_platform == "win32"

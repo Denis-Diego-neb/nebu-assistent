@@ -1,0 +1,7 @@
+chunky world world
+chunky shape circle
+chunky center 244 -1650
+chunky radius 2048
+chunky pattern concentric
+chunky selection
+chunky start
