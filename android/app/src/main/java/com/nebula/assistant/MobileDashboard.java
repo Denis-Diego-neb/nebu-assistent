@@ -3,6 +3,8 @@ package com.nebula.assistant;
 import android.app.Activity;
 import android.content.res.Configuration;
 import android.graphics.Color;
+import android.graphics.Canvas;
+import android.graphics.Paint;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Handler;
@@ -298,17 +300,14 @@ final class MobileDashboard {
         card.addView(volume);
 
         card.addView(label("Navegação", 13, muted));
-        FrameLayout dpad = new FrameLayout(activity);
-        dpad.setBackground(circleBackground(Color.rgb(39, 40, 44)));
+        DpadView dpad = new DpadView(activity, action -> run(status,
+            () -> universalAction(deviceId, action),
+            result -> status.setText(result.optString("message", "Comando enviado."))));
         LinearLayout.LayoutParams dpadSize = new LinearLayout.LayoutParams(dp(220), dp(220));
         dpadSize.gravity = Gravity.CENTER_HORIZONTAL;
         dpadSize.setMargins(0, dp(8), 0, dp(8));
         card.addView(dpad, dpadSize);
-        addDpadButton(dpad, directionButton("▲", deviceId, "up", status, available), Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-        addDpadButton(dpad, directionButton("◀", deviceId, "left", status, available), Gravity.CENTER_VERTICAL | Gravity.START);
-        addDpadButton(dpad, directionButton("▶", deviceId, "right", status, available), Gravity.CENTER_VERTICAL | Gravity.END);
-        addDpadButton(dpad, directionButton("▼", deviceId, "down", status, available), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        addDpadButton(dpad, directionButton("OK", deviceId, "ok", status, available), Gravity.CENTER);
+        dpad.setEnabled(available && !busy);
         LinearLayout nav = new LinearLayout(activity);
         nav.addView(remoteButton("Home", deviceId, "home", status, available), new LinearLayout.LayoutParams(0, -2, 1));
         nav.addView(remoteButton("Voltar", deviceId, "back", status, available), new LinearLayout.LayoutParams(0, -2, 1));
@@ -344,16 +343,39 @@ final class MobileDashboard {
         return control;
     }
 
-    private void addDpadButton(FrameLayout dpad, Button button, int gravity) {
-        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(dp(76), dp(76), gravity);
-        dpad.addView(button, params);
-    }
-
-    private GradientDrawable circleBackground(int color) {
-        GradientDrawable shape = new GradientDrawable();
-        shape.setShape(GradientDrawable.OVAL);
-        shape.setColor(color);
-        return shape;
+    private static final class DpadView extends View {
+        interface Listener { void send(String action); }
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Listener listener;
+        DpadView(android.content.Context context, Listener listener) {
+            super(context); this.listener = listener; setClickable(true);
+        }
+        @Override protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            float cx = getWidth() / 2f, cy = getHeight() / 2f;
+            float radius = Math.min(getWidth(), getHeight()) * .46f;
+            paint.setColor(Color.rgb(39, 40, 44)); paint.setStyle(Paint.Style.FILL);
+            canvas.drawCircle(cx, cy, radius, paint);
+            paint.setColor(Color.rgb(53, 54, 59));
+            canvas.drawCircle(cx, cy, radius * .34f, paint);
+            paint.setColor(Color.rgb(247, 241, 232)); paint.setTextAlign(Paint.Align.CENTER);
+            paint.setTypeface(Typeface.DEFAULT_BOLD); paint.setTextSize(radius * .22f);
+            canvas.drawText("OK", cx, cy + radius * .08f, paint);
+            paint.setTextSize(radius * .18f);
+            canvas.drawText("▲", cx, cy - radius * .58f, paint);
+            canvas.drawText("▼", cx, cy + radius * .72f, paint);
+            canvas.drawText("◀", cx - radius * .66f, cy + radius * .08f, paint);
+            canvas.drawText("▶", cx + radius * .66f, cy + radius * .08f, paint);
+        }
+        @Override public boolean onTouchEvent(android.view.MotionEvent event) {
+            if (event.getAction() != android.view.MotionEvent.ACTION_UP || !isEnabled()) return true;
+            float dx = event.getX() - getWidth() / 2f, dy = event.getY() - getHeight() / 2f;
+            String action;
+            if (Math.hypot(dx, dy) < getWidth() * .25) action = "ok";
+            else if (Math.abs(dx) > Math.abs(dy)) action = dx < 0 ? "left" : "right";
+            else action = dy < 0 ? "up" : "down";
+            listener.send(action); return true;
+        }
     }
 
     private void airControls(LinearLayout card, JSONObject device, TextView status) {

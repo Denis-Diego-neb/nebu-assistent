@@ -157,6 +157,8 @@ class SwitchNebula(tk.Canvas):
 
     def __init__(self, pai: tk.Misc, *, value=False, command=None) -> None:
         self._value = bool(value)
+        self._display = 1.0 if self._value else 0.0
+        self._animation = None
         self._command = command
         super().__init__(pai, width=54, height=28, bg=str(pai.cget("bg")),
                          highlightthickness=0, bd=0, cursor="hand2")
@@ -171,7 +173,7 @@ class SwitchNebula(tk.Canvas):
 
     def set(self, value: bool) -> None:
         self._value = bool(value)
-        self._draw()
+        self._animate()
 
     def get(self) -> bool:
         return self._value
@@ -180,12 +182,28 @@ class SwitchNebula(tk.Canvas):
         self.delete("all")
         width = max(54, self.winfo_width())
         height = max(28, self.winfo_height())
-        track = "#ead3ae" if self._value else "#414144"
+        track = "#ead3ae" if self._display >= 0.5 else "#414144"
         knob = "#f7f1e8" if self._value else "#706a62"
         self._rounded(1, 2, width - 1, height - 2, 14, fill=track, outline=track)
-        center_x = width - 14 if self._value else 14
+        center_x = 14 + (width - 28) * self._display
         self.create_oval(center_x - 10, height // 2 - 10, center_x + 10, height // 2 + 10,
                          fill=knob, outline=knob)
+
+    def _animate(self) -> None:
+        if self._animation is not None:
+            self.after_cancel(self._animation)
+        target = 1.0 if self._value else 0.0
+        def step():
+            distance = target - self._display
+            if abs(distance) < 0.04:
+                self._display = target
+                self._animation = None
+                self._draw()
+                return
+            self._display += distance * 0.35
+            self._draw()
+            self._animation = self.after(16, step)
+        step()
 
     def _rounded(self, x1, y1, x2, y2, radius, **kwargs):
         self.create_rectangle(x1 + radius, y1, x2 - radius, y2, **kwargs)
