@@ -121,9 +121,9 @@ class ControleTuyaTest(unittest.TestCase):
         controle = ControleAbajurTuya(self.config)
         self.assertEqual(controle._intensidade_ritmo, INTENSIDADE_RITMO_PADRAO)
 
-    def test_ritmo_tuya_usa_dez_quadros_por_segundo(self) -> None:
-        self.assertEqual(_RitmoTuya._QUADROS_POR_SEGUNDO, 10)
-        self.assertEqual(_RitmoTuya._INTERVALO, 0.1)
+    def test_ritmo_tuya_usa_vinte_e_cinco_quadros_por_segundo(self) -> None:
+        self.assertEqual(_RitmoTuya._QUADROS_POR_SEGUNDO, 25)
+        self.assertEqual(_RitmoTuya._INTERVALO, 0.04)
 
     def test_status_ocorre_antes_do_primeiro_comando(self) -> None:
         with patch("abajur_tuya.tinytuya", self.tinytuya_falso):

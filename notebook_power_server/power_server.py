@@ -645,6 +645,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.respond(200, TVS.action_all(data.get("action")))
             elif path == "/tvs/youtube":
                 self.respond(200, TVS.youtube(data.get("query"), data.get("id")))
+            elif path == "/tvs/link":
+                self.respond(200, TVS.link(data.get("url"), data.get("id")))
             elif path == "/control":
                 self.respond(200, BRAIN.action(str(data.get("action", "")), data.get("value")))
             elif path == "/universal/action":

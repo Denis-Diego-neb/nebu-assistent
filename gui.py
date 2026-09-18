@@ -557,9 +557,9 @@ class InterfaceNebula:
             if device in {"lamp", "keyboard", "controller"}:
                 enabled = tk.BooleanVar(value=False)
                 self.device_flash[device] = enabled
-                tk.Checkbutton(row, text="Flash do escape", variable=enabled, bg="#3b3b3f", fg="#d1c9bd",
-                               selectcolor="#414144", activebackground="#3b3b3f",
-                               activeforeground="#f4eee4", relief="flat", bd=0,
+                tk.Checkbutton(row, text="Flash do escape", variable=enabled, bg="#3b3b3f", fg="#ead3ae",
+                               selectcolor="#ead3ae", activebackground="#3b3b3f",
+                               activeforeground="#f7f1e8", relief="flat", bd=0,
                                command=lambda d=device, v=enabled: self._acionar_controle_desktop(
                                    "device.flash", {"device": d, "enabled": v.get()})).pack(side="left", padx=8)
             status = tk.Label(pai, text="", bg=fundo, fg="#ffad66", anchor="w")

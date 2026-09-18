@@ -1,6 +1,11 @@
 $ErrorActionPreference = "Stop"
 $log = Join-Path $PSScriptRoot "resultado-instalacao.txt"
 "Instalação iniciada em $(Get-Date -Format s)" | Set-Content -LiteralPath $log
+$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+$principal = [Security.Principal.WindowsPrincipal]::new($identity)
+if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    throw "Este instalador precisa ser executado como administrador. Abra INSTALAR-COMO-ADMINISTRADOR.cmd e confirme o UAC."
+}
 $source = Join-Path $PSScriptRoot "NebulaPowerServer.exe"
 $launcherSource = Join-Path $PSScriptRoot "iniciar_servicos_notebook.ps1"
 $targetDir = Join-Path $env:LOCALAPPDATA "NebulaPower"

@@ -156,6 +156,10 @@ class LgWebOsTvTests(unittest.TestCase):
         sent = json.loads(ws.send.call_args.args[0])
         self.assertEqual(sent["uri"], "ssap://audio/volumeDown")
 
+    def test_allows_lg_numeric_buttons(self) -> None:
+        self.assertIn("number_0", TvManager.ACTIONS)
+        self.assertIn("number_9", TvManager.ACTIONS)
+
 
 if __name__ == "__main__":
     unittest.main()

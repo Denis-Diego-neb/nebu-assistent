@@ -18,7 +18,7 @@ import java.util.UUID;
 
 /** Chave privada permanece no Android Keystore; PIN nunca sai do telefone. */
 final class PhoneUnlock {
-    private static final String ALIAS = "nebula.windows.unlock.v1";
+    private static final String ALIAS = "nebula.windows.unlock.v2";
     private static final String TARGET = "3c541588-dcd9-4272-9046-f71a390ac7e8";
 
     static void prepare(Context context) throws Exception {
@@ -31,7 +31,10 @@ final class PhoneUnlock {
                     .setDigests(KeyProperties.DIGEST_SHA256)
                     .setUserAuthenticationRequired(true);
             if (Build.VERSION.SDK_INT >= 30) {
-                spec.setUserAuthenticationParameters(5, KeyProperties.AUTH_DEVICE_CREDENTIAL);
+                spec.setUserAuthenticationParameters(
+                        5,
+                        KeyProperties.AUTH_DEVICE_CREDENTIAL | KeyProperties.AUTH_BIOMETRIC_STRONG
+                );
             } else {
                 spec.setUserAuthenticationValidityDurationSeconds(5);
             }

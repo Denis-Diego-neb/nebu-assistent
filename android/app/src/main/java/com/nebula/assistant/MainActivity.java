@@ -2,6 +2,7 @@ package com.nebula.assistant;
 
 import android.app.Activity;
 import android.app.KeyguardManager;
+import android.hardware.biometrics.BiometricPrompt;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -18,6 +19,7 @@ import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.CancellationSignal;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
@@ -45,6 +47,7 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.URL;
 import java.util.LinkedHashSet;
+import java.util.concurrent.Executor;
 
 /** Tela única para acordar o computador e iniciar a Nebula. */
 public class MainActivity extends Activity {
@@ -148,9 +151,8 @@ public class MainActivity extends Activity {
         dashboard = new MobileDashboard(this, POWER_TOKEN,
                 notebookEndpoints().toArray(new String[0]),
                 new String[]{PC_LAN_PANEL, PC_TAILSCALE_PANEL},
-                this::requirePhoneCredential, this::openPanelWhenReady);
+            this::requirePhoneCredential);
         powerButton = dashboard.powerButton;
-        panelButton = dashboard.panelButton;
         status = dashboard.status;
         setContentView(dashboard.root);
     }
@@ -181,6 +183,28 @@ public class MainActivity extends Activity {
             PhoneUnlock.prepare(this);
         } catch (Exception error) {
             setButtonState("TENTAR NOVAMENTE", "Não foi possível preparar a chave: " + errorMessage(error), true);
+            return;
+        }
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            BiometricPrompt prompt = new BiometricPrompt.Builder(this)
+                    .setTitle("Autorizar a inicialização")
+                    .setSubtitle("Use sua digital ou o PIN do celular para ligar a Nebula.")
+                    .setDescription("A autorização libera o comando de inicialização do PC.")
+                    .setAllowedAuthenticators(
+                            android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_STRONG
+                                    | android.hardware.biometrics.BiometricManager.Authenticators.DEVICE_CREDENTIAL
+                    )
+                    .build();
+            Executor executor = getMainExecutor();
+            prompt.authenticate(new CancellationSignal(), executor, new BiometricPrompt.AuthenticationCallback() {
+                @Override public void onAuthenticationSucceeded(BiometricPrompt.AuthenticationResult result) {
+                    wakeNebula();
+                }
+
+                @Override public void onAuthenticationError(int errorCode, CharSequence errorString) {
+                    setButtonState("TENTAR NOVAMENTE", errorString.toString(), true);
+                }
+            });
             return;
         }
         KeyguardManager keyguard = (KeyguardManager) getSystemService(KEYGUARD_SERVICE);
@@ -215,7 +239,6 @@ public class MainActivity extends Activity {
             wakeNebula();
         } else {
             setButtonState("LIGAR PC", "Autorização cancelada. O PC não foi ligado.", true);
-            panelButton.setEnabled(true);
         }
     }
 
@@ -233,7 +256,6 @@ public class MainActivity extends Activity {
             buildUi();
         }
         waking = true;
-        panelButton.setEnabled(false);
         setButtonState("LIGANDO…", "Enviando o sinal direto pelo Wi-Fi…", false);
 
         new Thread(() -> {
@@ -271,7 +293,6 @@ public class MainActivity extends Activity {
             String detail = "Wi-Fi direto: " + directError + ". Hub: " + relayError + ".";
             ui.post(() -> {
                 waking = false;
-                panelButton.setEnabled(true);
                 setButtonState("TENTAR NOVAMENTE", detail, true);
             });
         }, "NebulaWake").start();
@@ -279,8 +300,6 @@ public class MainActivity extends Activity {
 
     private void wakeSucceeded(String message) {
         setButtonState("NEBULA AUTORIZADA", message, false);
-        panelButton.setEnabled(true);
-        openPanelWhenReady();
     }
 
     private void openPanelWhenReady() {

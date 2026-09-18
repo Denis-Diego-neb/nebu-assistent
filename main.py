@@ -27,7 +27,14 @@ from app_launcher import Aplicativo, IniciadorAplicativos
 from abajur_wifi import ErroAbajur, interpretar_comandos_abajur
 from abajur_tuya import ConfiguracaoTuya, ControleAbajurTuya
 from ar_ir_direto import ControleArDireto
-from device_presets import Presets, MODES as DEVICE_MODES, defaults as device_defaults, validate as validate_devices, voice_preset
+from device_presets import (
+    Presets,
+    MODES as DEVICE_MODES,
+    KEYBOARD_EFFECTS,
+    defaults as device_defaults,
+    validate as validate_devices,
+    voice_preset,
+)
 from captura_tela import capturar_tela
 from controles_windows import ajustar_volume_youtube, salvar_replay_nvidia
 from conversa_local import AcaoQwen, ConversaLocal
@@ -684,6 +691,7 @@ class Nebula:
         self._device_errors: dict[str, str] = {}
         self._flash_outputs: dict[str, object] = {}
         self._flash_only: dict[str, object] = {}
+        self._keyboard_native_output: object | None = None
         self._active_preset: str | None = None
         self._presets = Presets(self._arquivo_preferencias_controle().with_name("device_presets.json"))
 
@@ -802,6 +810,22 @@ class Nebula:
         antigo = deepcopy(self._devices)
         primeira = not self._independent
         alterados = {d for d in DEVICE_MODES if novo[d] != antigo[d] or d in self._device_errors}
+
+        # Efeitos nativos do Kumara mantêm o handle HID aberto para que
+        # TecladoKumaraUSB.close() não restaure o modo Reactive imediatamente.
+        # Ao trocar qualquer ajuste do teclado, encerramos o handle anterior.
+        if "keyboard" in alterados and self._keyboard_native_output is not None:
+            native_output = self._keyboard_native_output
+            self._keyboard_native_output = None
+
+            # Quando afterfire está ativo, o mesmo objeto também fica em
+            # _flash_only e será fechado logo abaixo.
+            if native_output is not self._flash_only.get("keyboard"):
+                try:
+                    native_output.close()
+                except (OSError, OpenRGBKeyboardError, AttributeError):
+                    pass
+
         for device in alterados:
             output = self._flash_only.pop(device, None)
             if output is not None:
@@ -859,6 +883,72 @@ class Nebula:
                 self._device_errors["lamp"] = str(exc)
         if "color" in novo["keyboard"]:
             self._cor_teclado_boost = self._cor_rgb(novo["keyboard"]["color"])
+
+        # Modos nativos do firmware EVision do Kumara.
+        #
+        # "static" usa o caminho de cor uniforme. Os demais são enviados uma
+        # única vez por efeito_nativo(), deixando a animação a cargo do próprio
+        # firmware do teclado. Isso evita reescrever os 126 LEDs continuamente.
+        if "keyboard" in alterados and novo["keyboard"]["mode"] in KEYBOARD_EFFECTS:
+            keyboard_settings = novo["keyboard"]
+            keyboard_mode = str(keyboard_settings["mode"])
+            keyboard = None
+            output = None
+
+            try:
+                keyboard = criar_teclado_kumara()
+                output = keyboard
+
+                cor = (
+                    self._cor_rgb(keyboard_settings["color"])
+                    if "color" in keyboard_settings
+                    else self._cor_teclado_boost
+                )
+
+                if keyboard_settings.get("afterfire"):
+                    from exhaust_flash import ExhaustFlash
+
+                    output = ExhaustFlash(keyboard, keyboard=True)
+                    self._flash_only["keyboard"] = output
+                    self._flash_outputs["keyboard"] = output
+
+                if keyboard_mode == "static":
+                    output.enviar_rgb(*cor)
+                else:
+                    efeito_nativo = getattr(output, "efeito_nativo", None)
+                    if not callable(efeito_nativo):
+                        raise OpenRGBKeyboardError(
+                            "Os efeitos nativos exigem o backend USB EVision do Kumara."
+                        )
+
+                    # ExhaustFlash precisa saber qual é o efeito base para
+                    # restaurá-lo depois de um flash de escapamento.
+                    registrar_base = getattr(output, "_output", None)
+                    if keyboard_settings.get("afterfire") and callable(registrar_base):
+                        registrar_base("efeito_nativo", keyboard_mode, cor)
+                    else:
+                        efeito_nativo(keyboard_mode, cor)
+
+                self._keyboard_native_output = output
+
+            except (OSError, OpenRGBKeyboardError, ValueError, RuntimeError) as exc:
+                self._device_errors["keyboard"] = str(exc)
+
+                if output is not None:
+                    if self._flash_only.get("keyboard") is output:
+                        self._flash_only.pop("keyboard", None)
+                    if self._flash_outputs.get("keyboard") is output:
+                        self._flash_outputs.pop("keyboard", None)
+
+                alvo_fechar = output if output is not None else keyboard
+                if alvo_fechar is not None:
+                    try:
+                        alvo_fechar.close()
+                    except Exception:
+                        pass
+
+                self._keyboard_native_output = None
+
         iniciais = {"rpm": self._iniciar_modo_rpm, "boost": self._iniciar_modo_boost,
                     "ambilight": self._iniciar_modo_ambilight}
         for modo in sorted(afetados):
@@ -1763,9 +1853,23 @@ class Nebula:
         self._encerrar_modo_rpm()
         self._encerrar_modo_boost()
         self._encerrar_modo_ambilight()
+
+        native_output = self._keyboard_native_output
+        self._keyboard_native_output = None
+
+        # Se o modo nativo também está usando afterfire, _flash_only possui o
+        # mesmo wrapper e cuida de fechar o teclado uma única vez.
+        if native_output is not None and native_output not in self._flash_only.values():
+            try:
+                native_output.close()
+            except (OSError, OpenRGBKeyboardError, AttributeError):
+                pass
+
         for output in self._flash_only.values():
             output.close()
         self._flash_only.clear()
+        self._flash_outputs.clear()
+
         with self._controle_abajur_lock:
             controle = self._controle_abajur
             if controle is not None:

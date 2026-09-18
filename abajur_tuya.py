@@ -57,7 +57,7 @@ def pasta_dados_nebula() -> Path:
 class ConfiguracaoTuya:
     """Credenciais necessárias para uma conexão local Tuya."""
 
-    device_: str = field(repr=False)
+    device_id: str = field(repr=False)
     address: str = "Auto"
     local_key: str = field(default="", repr=False)
     version: float = 3.5
@@ -748,10 +748,10 @@ class ControleAbajurTuya:
 class _RitmoTuya:
     """Pulsa brilho pela LAN usando principalmente bumbo e baixo da música."""
 
-    _QUADROS_POR_SEGUNDO = 10
+    _QUADROS_POR_SEGUNDO = 25
     _INTERVALO = 1 / _QUADROS_POR_SEGUNDO
-    _INTERVALO_RECUPERACAO = 0.15
-    _MAX_FALHAS_CONSECUTIVAS = 5
+    _INTERVALO_RECUPERACAO = 0.10
+    _MAX_FALHAS_CONSECUTIVAS = 6
     _TIMEOUT_INICIO = 5.0
 
     def __init__(
