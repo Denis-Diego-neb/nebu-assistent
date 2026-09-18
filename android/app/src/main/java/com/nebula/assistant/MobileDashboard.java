@@ -298,21 +298,17 @@ final class MobileDashboard {
         card.addView(volume);
 
         card.addView(label("Navegação", 13, muted));
-        LinearLayout up = new LinearLayout(activity);
-        up.addView(new Space(activity), new LinearLayout.LayoutParams(0, -2, 1));
-        up.addView(directionButton("▲", deviceId, "up", status, available), new LinearLayout.LayoutParams(0, dp(48), 1));
-        up.addView(new Space(activity), new LinearLayout.LayoutParams(0, -2, 1));
-        card.addView(up);
-        LinearLayout middle = new LinearLayout(activity);
-        middle.addView(directionButton("◀", deviceId, "left", status, available), new LinearLayout.LayoutParams(0, dp(52), 1));
-        middle.addView(directionButton("OK", deviceId, "ok", status, available), new LinearLayout.LayoutParams(0, dp(52), 1));
-        middle.addView(directionButton("▶", deviceId, "right", status, available), new LinearLayout.LayoutParams(0, dp(52), 1));
-        card.addView(middle);
-        LinearLayout down = new LinearLayout(activity);
-        down.addView(new Space(activity), new LinearLayout.LayoutParams(0, -2, 1));
-        down.addView(directionButton("▼", deviceId, "down", status, available), new LinearLayout.LayoutParams(0, dp(48), 1));
-        down.addView(new Space(activity), new LinearLayout.LayoutParams(0, -2, 1));
-        card.addView(down);
+        FrameLayout dpad = new FrameLayout(activity);
+        dpad.setBackground(circleBackground(Color.rgb(39, 40, 44)));
+        LinearLayout.LayoutParams dpadSize = new LinearLayout.LayoutParams(dp(220), dp(220));
+        dpadSize.gravity = Gravity.CENTER_HORIZONTAL;
+        dpadSize.setMargins(0, dp(8), 0, dp(8));
+        card.addView(dpad, dpadSize);
+        addDpadButton(dpad, directionButton("▲", deviceId, "up", status, available), Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+        addDpadButton(dpad, directionButton("◀", deviceId, "left", status, available), Gravity.CENTER_VERTICAL | Gravity.START);
+        addDpadButton(dpad, directionButton("▶", deviceId, "right", status, available), Gravity.CENTER_VERTICAL | Gravity.END);
+        addDpadButton(dpad, directionButton("▼", deviceId, "down", status, available), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        addDpadButton(dpad, directionButton("OK", deviceId, "ok", status, available), Gravity.CENTER);
         LinearLayout nav = new LinearLayout(activity);
         nav.addView(remoteButton("Home", deviceId, "home", status, available), new LinearLayout.LayoutParams(0, -2, 1));
         nav.addView(remoteButton("Voltar", deviceId, "back", status, available), new LinearLayout.LayoutParams(0, -2, 1));
@@ -346,6 +342,18 @@ final class MobileDashboard {
         circle.setColor(surface);
         control.setBackground(circle);
         return control;
+    }
+
+    private void addDpadButton(FrameLayout dpad, Button button, int gravity) {
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(dp(76), dp(76), gravity);
+        dpad.addView(button, params);
+    }
+
+    private GradientDrawable circleBackground(int color) {
+        GradientDrawable shape = new GradientDrawable();
+        shape.setShape(GradientDrawable.OVAL);
+        shape.setColor(color);
+        return shape;
     }
 
     private void airControls(LinearLayout card, JSONObject device, TextView status) {
