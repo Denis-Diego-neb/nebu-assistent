@@ -152,6 +152,51 @@ class BotaoArredondado(tk.Canvas):
         return mapa[chave] if chave in mapa else super().cget(chave)
 
 
+class SwitchNebula(tk.Canvas):
+    """Switch compacto com a paleta secundaria da Nebula."""
+
+    def __init__(self, pai: tk.Misc, *, value=False, command=None) -> None:
+        self._value = bool(value)
+        self._command = command
+        super().__init__(pai, width=54, height=28, bg=str(pai.cget("bg")),
+                         highlightthickness=0, bd=0, cursor="hand2")
+        self.bind("<Button-1>", self._toggle)
+        self.bind("<Configure>", lambda _event: self._draw())
+        self._draw()
+
+    def _toggle(self, _event=None) -> None:
+        self.set(not self._value)
+        if self._command:
+            self._command(self._value)
+
+    def set(self, value: bool) -> None:
+        self._value = bool(value)
+        self._draw()
+
+    def get(self) -> bool:
+        return self._value
+
+    def _draw(self) -> None:
+        self.delete("all")
+        width = max(54, self.winfo_width())
+        height = max(28, self.winfo_height())
+        track = "#ead3ae" if self._value else "#414144"
+        knob = "#f7f1e8" if self._value else "#706a62"
+        self._rounded(1, 2, width - 1, height - 2, 14, fill=track, outline=track)
+        center_x = width - 14 if self._value else 14
+        self.create_oval(center_x - 10, height // 2 - 10, center_x + 10, height // 2 + 10,
+                         fill=knob, outline=knob)
+
+    def _rounded(self, x1, y1, x2, y2, radius, **kwargs):
+        self.create_rectangle(x1 + radius, y1, x2 - radius, y2, **kwargs)
+        self.create_rectangle(x1, y1 + radius, x2, y2 - radius, **kwargs)
+        for x, y, start in ((x1, y1, 90), (x2 - 2 * radius, y1, 0),
+                            (x2 - 2 * radius, y2 - 2 * radius, 270),
+                            (x1, y2 - 2 * radius, 180)):
+            self.create_arc(x, y, x + 2 * radius, y + 2 * radius,
+                            start=start, extent=90, **kwargs)
+
+
 class PainelArredondado(tk.Canvas):
     """Superfície com cantos arredondados que recebe widgets em ``body``."""
 
@@ -555,13 +600,15 @@ class InterfaceNebula:
                           self._acionar_controle_desktop("device.mode", {"device": d, "mode": DEVICE_MODES[d][s.current()]}))
             self.device_selectors[device] = selector
             if device in {"lamp", "keyboard", "controller"}:
-                enabled = tk.BooleanVar(value=False)
-                self.device_flash[device] = enabled
-                tk.Checkbutton(row, text="Flash do escape", variable=enabled, bg="#3b3b3f", fg="#ead3ae",
-                               selectcolor="#ead3ae", activebackground="#3b3b3f",
-                               activeforeground="#f7f1e8", relief="flat", bd=0,
-                               command=lambda d=device, v=enabled: self._acionar_controle_desktop(
-                                   "device.flash", {"device": d, "enabled": v.get()})).pack(side="left", padx=8)
+                switch = SwitchNebula(
+                    row,
+                    command=lambda value, d=device: self._acionar_controle_desktop(
+                        "device.flash", {"device": d, "enabled": value}),
+                )
+                self.device_flash[device] = switch
+                switch.pack(side="left", padx=(8, 4))
+                tk.Label(row, text="Flash do escape", bg="#3b3b3f", fg="#ead3ae",
+                         font=("Segoe UI", 9)).pack(side="left")
             status = tk.Label(pai, text="", bg=fundo, fg="#ffad66", anchor="w")
             status.pack(fill="x")
             self.device_status[device] = status
