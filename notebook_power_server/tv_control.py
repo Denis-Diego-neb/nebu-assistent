@@ -67,6 +67,7 @@ LG_BUTTONS = {
     "home": "HOME",
     "source": "INPUT",
 }
+LG_BUTTONS.update({f"number_{number}": str(number) for number in range(10)})
 
 LG_PERMISSIONS = [
     "LAUNCH",
@@ -252,6 +253,11 @@ class SamsungTv:
         finally:
             ws.close()
 
+    def open_link(self, url: str) -> None:
+        # Tizen does not expose one universal browser deep-link API; opening
+        # the URL through the existing YouTube channel remains the compatible path.
+        self.open_youtube(url)
+
 
 class LgWebOsTv:
     def __init__(self, device: dict[str, object]) -> None:
@@ -359,18 +365,30 @@ class LgWebOsTv:
             )
             try:
                 pointer_ws.send(f"type:button\nname:{button}\n\n")
+                pointer_ws.settimeout(4)
+                try:
+                    reply = pointer_ws.recv()
+                except (websocket.WebSocketTimeoutException, TimeoutError):
+                    reply = ""
+                if reply and isinstance(reply, bytes):
+                    reply = reply.decode("utf-8", errors="replace")
+                if isinstance(reply, str) and "error" in reply.casefold():
+                    raise TvError("A LG recusou o botão do controle remoto.")
             finally:
                 pointer_ws.close()
         finally:
             ws.close()
 
     def open_youtube(self, url: str) -> None:
+        self.open_link(url)
+
+    def open_link(self, url: str) -> None:
         ws = self._connect()
         try:
             self._request(
                 ws,
                 "ssap://system.launcher/launch",
-                {"id": "youtube.leanback.v4", "params": {"contentTarget": url}},
+                {"id": "com.webos.app.browser", "params": {"contentTarget": url}},
             )
         finally:
             ws.close()
@@ -645,6 +663,21 @@ class TvManager:
             "message": f"YouTube enviado para {result['successes']} TV(s).",
             "url": url,
         })
+        return result
+
+    def link(self, url: object, device_id: object | None = None) -> dict[str, object]:
+        if not isinstance(url, str) or not re.fullmatch(r"https://[^\s]{6,2048}", url.strip(), re.IGNORECASE):
+            raise TvError("Cole um link HTTPS válido de YouTube, Spotify ou outro serviço.")
+        alvo = self._device(device_id) if device_id else None
+        if alvo is not None:
+            self._driver(alvo).open_link(url.strip())
+            with self._lock:
+                self._save()
+            return {"ok": True, "message": "Link aberto na TV selecionada.", "successes": 1, "failures": 0}
+        result = self._run_many(lambda device: self._driver(device).open_link(url.strip()))
+        if not result["ok"]:
+            raise TvError("Nenhuma TV conseguiu abrir o link.")
+        result["message"] = f"Link enviado para {result['successes']} TV(s)."
         return result
 
 

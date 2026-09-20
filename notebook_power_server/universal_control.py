@@ -171,6 +171,10 @@ class UniversalController:
                     cmds.extend((("power_off", "Desligar"), ("volume_down", "Volume −"), ("volume_up", "Volume +"),
                                  ("mute", "Mudo"), ("home", "Início"), ("up", "↑"), ("left", "←"),
                                  ("ok", "OK"), ("right", "→"), ("down", "↓"), ("back", "Voltar")))
+                    if tv.get("brand") == "lg":
+                        cmds.extend((
+                            (f"number_{number}", str(number)) for number in range(10)
+                        ))
                 else:
                     cmds.append(("pair", "Parear TV"))
             result.append({"id": "tv:" + tv["id"], "name": tv["name"], "kind": "tv", "source": tv["brand"],

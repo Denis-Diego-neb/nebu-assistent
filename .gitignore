@@ -159,6 +159,8 @@ ipch/
 
 **/agent_build/
 **/work_build/
+**/.package-*/
+android-current.png
 
 native/nebula_credential_provider/SampleV2.98E74D71/
 native/nebula_credential_provider/x64/

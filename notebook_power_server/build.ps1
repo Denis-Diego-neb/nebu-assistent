@@ -10,6 +10,8 @@ if ($LASTEXITCODE -ne 0) { throw "Os testes do hub doméstico falharam." }
 
 & $pyinstaller --noconfirm --clean --onefile --noconsole `
     --name NebulaPowerServer `
+    --runtime-tmpdir runtime `
+    --noupx `
     --paths $PSScriptRoot `
     --paths $projectRoot `
     --hidden-import tv_control `

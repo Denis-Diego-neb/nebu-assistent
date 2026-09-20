@@ -46,6 +46,7 @@ final class DevicePanelView extends FrameLayout {
         turbo.setVisibility(showTurbo?VISIBLE:GONE);rpm.setVisibility(showTurbo?GONE:VISIBLE);
         rpm.update(lastState,selected,lastError);
     }
+    void setTurboStyle(String style) { turbo.applyStyle(style); }
     void stop() {
         if(controlClient!=null)controlClient.close();
         if(turboClient!=null)turboClient.close();

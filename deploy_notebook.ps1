@@ -13,7 +13,10 @@ $versionText = Get-Content -LiteralPath (Join-Path $projectRoot "versao.py") -Ra
 $versionMatch = [regex]::Match($versionText, 'VERSAO_NEBULA\s*=\s*["'']([0-9]+\.[0-9]+\.[0-9]+)["'']')
 if (-not $versionMatch.Success) { throw "Versao da Nebula nao encontrada." }
 $version = $versionMatch.Groups[1].Value
-$token = "npw_A71_x99e_8f4c2a91d7604b3e"
+$token = $env:NEBULA_POWER_TOKEN
+if ([string]::IsNullOrWhiteSpace($token) -or $token.Length -lt 24) {
+    throw "Defina NEBULA_POWER_TOKEN com pelo menos 24 caracteres antes do deploy."
+}
 $auth = @{ "X-Nebula-Power-Token" = $token }
 
 try {

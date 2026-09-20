@@ -1,8 +1,9 @@
 $ErrorActionPreference = "SilentlyContinue"
+$PSScriptRoot | Set-Location
 
 $powerServer = Join-Path $PSScriptRoot "NebulaPowerServer.exe"
 if ((Test-Path -LiteralPath $powerServer) -and -not (Get-Process NebulaPowerServer -ErrorAction SilentlyContinue)) {
-    Start-Process -FilePath $powerServer -WindowStyle Normal
+    Start-Process -FilePath $powerServer -WorkingDirectory $PSScriptRoot -WindowStyle Normal
 }
 
 $qwenEnabled = $env:NEBULA_QWEN_ENABLED -in @("1", "true", "sim", "yes", "on")

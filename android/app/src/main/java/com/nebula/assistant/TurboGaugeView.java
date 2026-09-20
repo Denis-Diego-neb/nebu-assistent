@@ -16,8 +16,9 @@ import java.util.Locale;
 final class TurboGaugeView extends View {
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint glow = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final int neon = Color.rgb(20,225,255);
-    private final int hot = Color.rgb(255,72,145);
+    private int neon = Color.rgb(20,225,255);
+    private int hot = Color.rgb(255,72,145);
+    private int background = Color.rgb(2,5,8);
     private boolean valid;
     private float value, needle, scale = 3;
     private long lastFrame;
@@ -26,6 +27,18 @@ final class TurboGaugeView extends View {
     TurboGaugeView(Context context) {
         super(context); setBackgroundColor(Color.BLACK); setLayerType(View.LAYER_TYPE_SOFTWARE,null);
         glow.setStyle(Paint.Style.STROKE);glow.setStrokeCap(Paint.Cap.ROUND);
+        applyStyle(context.getSharedPreferences("nebula", Context.MODE_PRIVATE).getString("boost_style", "cyber"));
+    }
+
+    void applyStyle(String style) {
+        if ("heat".equals(style)) {
+            neon = Color.rgb(255, 92, 24); hot = Color.rgb(255, 20, 78); background = Color.rgb(13, 3, 5);
+        } else if ("lime".equals(style)) {
+            neon = Color.rgb(166, 255, 54); hot = Color.rgb(255, 214, 48); background = Color.rgb(3, 10, 6);
+        } else {
+            neon = Color.rgb(20, 225, 255); hot = Color.rgb(255, 72, 145); background = Color.rgb(2, 5, 8);
+        }
+        invalidate();
     }
 
     void update(JSONObject data, String error) {
@@ -60,7 +73,7 @@ final class TurboGaugeView extends View {
 
     @Override protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
-        canvas.drawColor(Color.rgb(2,5,8));
+        canvas.drawColor(background);
         float radius = Math.min(getWidth()*.43f,getHeight()*.41f);
         float cx=getWidth()/2f, cy=getHeight()*.49f;
         long now=SystemClock.elapsedRealtime();

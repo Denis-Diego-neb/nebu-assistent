@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import queue
 import re
+import secrets
 import socket
 import subprocess
 import sys
@@ -62,9 +63,8 @@ except ImportError:
 
 
 PORT = 8766
-POWER_TOKEN = os.environ.get(
-    "NEBULA_POWER_TOKEN", "npw_A71_x99e_8f4c2a91d7604b3e"
-)
+_POWER_TOKEN_CONFIGURADO = os.environ.get("NEBULA_POWER_TOKEN", "").strip()
+POWER_TOKEN = _POWER_TOKEN_CONFIGURADO or secrets.token_urlsafe(32)
 TARGET_MAC = os.environ.get("NEBULA_PC_MAC", "00:E0:23:7C:7B:4D")
 BROADCAST = os.environ.get("NEBULA_BROADCAST", "192.168.15.255")
 MAX_BODY_BYTES = 16_384
@@ -645,6 +645,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.respond(200, TVS.action_all(data.get("action")))
             elif path == "/tvs/youtube":
                 self.respond(200, TVS.youtube(data.get("query"), data.get("id")))
+            elif path == "/tvs/link":
+                self.respond(200, TVS.link(data.get("url"), data.get("id")))
             elif path == "/control":
                 self.respond(200, BRAIN.action(str(data.get("action", "")), data.get("value")))
             elif path == "/universal/action":
@@ -792,6 +794,12 @@ def run_monitor_window(server: ThreadingHTTPServer) -> None:
 
 
 if __name__ == "__main__":
+    if not _POWER_TOKEN_CONFIGURADO:
+        raise SystemExit(
+            "Configure NEBULA_POWER_TOKEN com pelo menos 24 caracteres antes de iniciar."
+        )
+    if len(POWER_TOKEN) < 24:
+        raise SystemExit("NEBULA_POWER_TOKEN precisa ter pelo menos 24 caracteres.")
     http_server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     BRAIN.air_timer.start()
     MONITOR.record_event(f"Servidor iniciado em 0.0.0.0:{PORT}.")
