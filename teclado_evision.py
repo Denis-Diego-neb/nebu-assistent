@@ -148,6 +148,10 @@ EFFECT_ALIASES = {
 
 
 class TecladoKumaraUSB:
+    # O firmware aplica frames Custom em blocos; a troca nao e atomica e pode
+    # aparecer como uma piscada durante atualizacoes continuas.
+    ambilight_multizona_seguro = False
+
     name = "Kumara USB"
 
     # Antes estava limitado a 5 FPS.

@@ -6,11 +6,28 @@ from core.action_contracts import (
 from core.dispatcher import Dispatcher
 from core.legacy_actions import comando_canonico
 from core.registry import Registry, Tool
+from modules.iot.ambilight import (
+    AMBILIGHT_TOOL_NAMES,
+    AcoesAmbilight,
+    registrar_tools_ambilight,
+)
 from modules.iot.lights import pedido_da_tool
 
 
 def criar_dispatcher(host, nomes=None) -> Dispatcher:
     registry = Registry()
+
+    registrar_tools_ambilight(
+        registry,
+        AcoesAmbilight(
+            iniciar=host._iniciar_modo_ambilight,
+            parar=host._parar_modo_ambilight,
+            status=host._informar_status_modo_ambilight,
+        ),
+        obter_ultima_mensagem=lambda: host._ultima_resposta,
+        aguardando_resposta=lambda: host.aguardando_resposta,
+        nomes=nomes,
+    )
 
     def validate(name, arguments):
         if set(arguments) != {"argumento"}:
@@ -51,6 +68,8 @@ def criar_dispatcher(host, nomes=None) -> Dispatcher:
 
     for name in ACOES_QWEN:
         if nomes is not None and name not in nomes:
+            continue
+        if name in AMBILIGHT_TOOL_NAMES:
             continue
         schema = {"type": "object", "additionalProperties": False,
                   "required": ["argumento"], "properties": {"argumento": {

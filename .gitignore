@@ -263,3 +263,12 @@ logs/
 !android/gradle/wrapper/gradle-wrapper.properties
 !android/gradlew
 !android/gradlew.bat
+
+# Saidas locais das sprints de arquitetura. Scripts, manifests e README ficam
+# versionaveis; respostas dos modelos e estados de execucao nao.
+ai_sprints/autopilot_runs/
+ai_sprints/sprint_*/
+ai_sprints/*.rar
+ai_sprints/*state.json
+ai_sprints/queue/*.json
+!ai_sprints/queue/README.md

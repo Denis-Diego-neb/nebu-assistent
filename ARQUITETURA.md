@@ -133,3 +133,31 @@ Não é necessário modificar o servidor genérico para registrar outra função
 
 Testes: `python -m unittest discover -s tests` cobre registro, host, abajur,
 encaminhamento, troca de rota e transporte HTTP, sem acionar dispositivos reais.
+
+## Camadas alvo do MCP
+
+1. `modules/`: regra do dispositivo, contrato e handler da tool;
+2. `core/registry.py`: catalogo local e schemas, sem rede ou modelo;
+3. `core/dispatcher.py`: validacao e execucao, sem interpretar linguagem;
+4. `integrations/mcp/`: adaptadores MCP Client/Server futuros, sem regras de
+   dispositivo;
+5. `services/network.py`: escolha de rota LAN/remota;
+6. host: composicao das dependencias e ciclo de vida do processo.
+
+O Ambilight e o segundo passo incremental: suas tres tools sao registradas em
+`modules/iot/ambilight.py` e chamadas diretamente. O ciclo de vida de hardware
+ainda fica no host por callbacks; assim, a mudanca do contrato nao ocorre junto
+com uma migracao arriscada das threads e do estado compartilhado.
+
+## Agentes locais de arquitetura
+
+`ai_sprints/orchestrator.py` envia evidencias de simbolos ao worker 4B e ao
+reviewer 9B. A evidencia recebe hash, entao uma rodada concluida nao se repete
+sem mudanca de codigo. Respostas curtas, incompletas ou sem veredito sao
+rejeitadas.
+
+`ai_sprints/autopilot.py` pode observar `ai_sprints/queue/` enquanto o Codex nao
+esta ativo. Cada job fixa arquivos permitidos e comandos de teste. O patch do 4B
+e aplicado apenas em um Git worktree descartavel, revisado pelo 9B antes e depois
+dos testes. O resultado fica como patch e relatorio; nenhum agente local faz
+commit, merge ou push.

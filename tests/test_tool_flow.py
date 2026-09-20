@@ -115,6 +115,20 @@ class HostFlowTests(unittest.TestCase):
                 "name": "abajur_ligar", "arguments": {"argumento": ""},
             })["ok"])
 
+    def test_tool_ambilight_chama_executor_direto_sem_frase_legada(self):
+        with patch.object(Nebula, "_iniciar_modo_ambilight", autospec=True) as iniciar:
+            host = Nebula(self.saida, abrir_navegador=False)
+            self.addCleanup(host.fechar)
+            with patch.object(
+                host, "_executar_local", side_effect=AssertionError("nao deve reinterpretar")
+            ):
+                result = host.dispatcher.call_tool({
+                    "name": "modo_ambilight_iniciar",
+                    "arguments": {"argumento": ""},
+                })
+        self.assertTrue(result["ok"])
+        iniciar.assert_called_once_with(host)
+
     @patch.dict(os.environ, {"NEBULA_QWEN_ENABLED": "1"})
     def test_confirmacao_pendente_nao_consulta_modelo(self):
         self.host.comando_pendente = "confirmar_desligar_pc"

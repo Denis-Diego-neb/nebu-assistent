@@ -32,3 +32,15 @@ Teste isolado, sem acionar o abajur:
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -p test_lights.py
 ```
+
+## Segunda etapa: Ambilight
+
+- `modules/iot/ambilight.py` registra as tools `modo_ambilight_iniciar`,
+  `modo_ambilight_parar` e `modo_ambilight_status` com callbacks tipados. O
+  dispatcher nao converte essas chamadas em frases para o parser legado.
+- O modulo escolhe a saida do teclado por capacidade. O driver USB usa RGB
+  uniforme porque o firmware aplica o frame Custom de 126 LEDs em blocos; o
+  driver OpenRGB pode manter a saida multizona.
+- O ciclo de vida dos dispositivos ainda permanece em `Nebula` e entra no
+  modulo por callbacks. Ele pode ser extraido depois que o contrato de estado
+  estiver estabilizado.

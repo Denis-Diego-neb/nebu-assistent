@@ -1,0 +1,46 @@
+{
+  "id": "sprint_02_ambilight",
+  "objective": "Extrair o Ambilight do host para um modulo de dominio registrado como tools diretas e eliminar a piscada do teclado USB causada por frames customizados completos.",
+  "evidence": [
+    {
+      "path": "main.py",
+      "symbols": [
+        "interpretar_comando_modo_ambilight",
+        "Nebula._encerrar_modo_ambilight",
+        "Nebula._iniciar_modo_ambilight",
+        "Nebula._parar_modo_ambilight",
+        "Nebula._informar_status_modo_ambilight"
+      ]
+    },
+    {
+      "path": "core/bootstrap.py",
+      "symbols": ["criar_dispatcher"]
+    },
+    {
+      "path": "modules/iot/lights.py",
+      "symbols": ["pedido_da_tool", "executar_pedidos_abajur"]
+    },
+    {
+      "path": "modo_ambilight.py",
+      "symbols": [
+        "ModoAmbilight.__init__",
+        "ModoAmbilight._loop_lampada",
+        "ModoAmbilight.status"
+      ]
+    },
+    {
+      "path": "teclado_evision.py",
+      "symbols": [
+        "TecladoKumaraUSB.enviar_rgb",
+        "TecladoKumaraUSB.enviar_zonas"
+      ]
+    }
+  ],
+  "acceptance": [
+    "As tools iniciar, parar e status chamam codigo tipado sem reinterpretar uma frase.",
+    "O modulo extraido nao importa main.py nem conhece HTTP, voz ou Qwen.",
+    "Comandos legados de texto continuam funcionando.",
+    "O teclado USB usa atualizacao uniforme sem regravar os 126 LEDs a cada quadro.",
+    "Testes cobrem registro, execucao direta, estado e selecao da saida do teclado."
+  ]
+}
