@@ -14,9 +14,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
-POWER_TOKEN = os.environ.get(
-    "NEBULA_POWER_TOKEN", "npw_A71_x99e_8f4c2a91d7604b3e"
-)
+POWER_TOKEN = os.environ.get("NEBULA_POWER_TOKEN", "").strip()
 NOTEBOOK_ENDPOINTS = (
     "http://100.78.67.81:8766",
     "http://192.168.15.4:8766",
@@ -177,6 +175,9 @@ def acquire_single_instance() -> socket.socket:
 
 
 def run() -> None:
+    if len(POWER_TOKEN) < 24:
+        log("Agente desativado: configure NEBULA_POWER_TOKEN com pelo menos 24 caracteres.")
+        return
     try:
         guard = acquire_single_instance()
     except OSError:

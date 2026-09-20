@@ -1,4 +1,11 @@
+param(
+    [string]$PowerToken = $env:NEBULA_POWER_TOKEN
+)
+
 $ErrorActionPreference = "Stop"
+if ([string]::IsNullOrWhiteSpace($PowerToken) -or $PowerToken.Length -lt 24) {
+    throw "Defina NEBULA_POWER_TOKEN ou informe -PowerToken com pelo menos 24 caracteres."
+}
 $log = Join-Path $PSScriptRoot "resultado-instalacao.txt"
 "Instalação iniciada em $(Get-Date -Format s)" | Set-Content -LiteralPath $log
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -59,6 +66,7 @@ if (Test-Path -LiteralPath $airConfigSource) {
 }
 
 [Environment]::SetEnvironmentVariable("NEBULA_QWEN_ENABLED", "0", "User")
+[Environment]::SetEnvironmentVariable("NEBULA_POWER_TOKEN", $PowerToken, "User")
 $allowedNetworks = @("LocalSubnet", "100.64.0.0/10")
 
 Get-NetFirewallRule -DisplayName "Nebula Power Server" -ErrorAction SilentlyContinue |
@@ -92,7 +100,7 @@ while ((Get-Date) -lt $startupDeadline) {
     if (Get-Process NebulaPowerServer -ErrorAction SilentlyContinue) {
         try {
             Invoke-WebRequest -Uri "http://127.0.0.1:8766/health" `
-                -Headers @{"X-Nebula-Power-Token" = "npw_A71_x99e_8f4c2a91d7604b3e"} `
+                -Headers @{"X-Nebula-Power-Token" = $PowerToken} `
                 -UseBasicParsing -TimeoutSec 2 | Out-Null
             $serverReady = $true
             break

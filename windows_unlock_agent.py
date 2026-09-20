@@ -16,9 +16,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
 
-POWER_TOKEN = os.environ.get(
-    "NEBULA_POWER_TOKEN", "npw_A71_x99e_8f4c2a91d7604b3e"
-)
+POWER_TOKEN = os.environ.get("NEBULA_POWER_TOKEN", "").strip()
 NOTEBOOK_ENDPOINTS = (
     "http://100.78.67.81:8766",
     "http://192.168.15.4:8766",
@@ -124,6 +122,9 @@ def accept_command(command: dict[str, object], last_command: str, now: float) ->
 
 
 def run() -> None:
+    if len(POWER_TOKEN) < 24:
+        log("Agente desativado: configure NEBULA_POWER_TOKEN com pelo menos 24 caracteres.")
+        return
     last_command = load_last_command()
     log("Agente de desbloqueio iniciado.")
     offline_logged = False

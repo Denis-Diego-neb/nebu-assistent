@@ -1,5 +1,12 @@
 # Nebula
 
+Organização incremental e fluxo Qwen → tools, servidor de execução e acesso
+LAN/remoto: [arquitetura atual](ARQUITETURA.md).
+
+As integrações autenticadas entre PC, notebook e Android exigem a variável
+`NEBULA_POWER_TOKEN` com o mesmo valor em cada build/serviço. Não armazene esse
+valor no repositório; consulte a seção de rede em `ARQUITETURA.md`.
+
 Assistente virtual em Python para Windows. Ela acorda ao ouvir exclusivamente **Nebu**,
 responde por voz e executa pesquisas no YouTube ou Google.
 
@@ -490,6 +497,3 @@ uso único que expira em 120 segundos. A senha real do Windows é cadastrada uma
 vez no próprio PC, validada localmente e protegida com DPAPI; ela nunca é
 incluída no APK, no Wake-on-LAN nem no hub. Os provedores normais de PIN e Senha
 do Windows permanecem disponíveis para recuperação.
-#   n e b u - a s s i s t e n t  
- #   n e b u - a s s i s t e n t  
- 

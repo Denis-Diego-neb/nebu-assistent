@@ -52,7 +52,7 @@ import java.util.concurrent.Executor;
 /** Tela única para acordar o computador e iniciar a Nebula. */
 public class MainActivity extends Activity {
     private static final int REQUEST_DEVICE_CREDENTIAL = 4107;
-    private static final String POWER_TOKEN = "npw_A71_x99e_8f4c2a91d7604b3e";
+    private static final String POWER_TOKEN = BuildConfig.NEBULA_POWER_TOKEN;
     private static final String PC_MAC = "00:E0:23:7C:7B:4D";
     private static final String PC_LAN_IP = "192.168.15.12";
     private static final String NOTEBOOK_LAN_SERVER = "http://192.168.15.4:8766";

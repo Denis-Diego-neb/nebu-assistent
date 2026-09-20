@@ -153,14 +153,17 @@ class BotaoArredondado(tk.Canvas):
 
 
 class SwitchNebula(tk.Canvas):
-    """Switch compacto com a paleta secundaria da Nebula."""
+    """Switch compacto, moderno e antialiased com a paleta Nebula."""
+
+    _CACHE: dict[tuple, ImageTk.PhotoImage] = {}
 
     def __init__(self, pai: tk.Misc, *, value=False, command=None) -> None:
         self._value = bool(value)
         self._display = 1.0 if self._value else 0.0
         self._animation = None
         self._command = command
-        super().__init__(pai, width=54, height=28, bg=str(pai.cget("bg")),
+        self._photo = None
+        super().__init__(pai, width=52, height=28, bg=str(pai.cget("bg")),
                          highlightthickness=0, bd=0, cursor="hand2")
         self.bind("<Button-1>", self._toggle)
         self.bind("<Configure>", lambda _event: self._draw())
@@ -168,7 +171,7 @@ class SwitchNebula(tk.Canvas):
 
     def _toggle(self, _event=None) -> None:
         self.set(not self._value)
-        if self._command:
+        if callable(self._command):
             self._command(self._value)
 
     def set(self, value: bool) -> None:
@@ -178,21 +181,72 @@ class SwitchNebula(tk.Canvas):
     def get(self) -> bool:
         return self._value
 
+    def _get_bg_rgb(self) -> tuple[int, int, int]:
+        try:
+            return tuple(c // 256 for c in self.winfo_rgb(self.cget("bg")))
+        except Exception:
+            return (59, 59, 63)
+
+    @classmethod
+    def _render_image(cls, val: float, bg_rgb: tuple[int, int, int], width: int, height: int) -> ImageTk.PhotoImage:
+        S = 4
+        W, H = width * S, height * S
+        img = Image.new("RGBA", (W, H), bg_rgb + (255,))
+        d = ImageDraw.Draw(img)
+
+        t_pad_x = 2 * S
+        t_pad_y = 2 * S
+        tr_x1, tr_y1 = t_pad_x, t_pad_y
+        tr_x2, tr_y2 = W - t_pad_x, H - t_pad_y
+        tr_r = (tr_y2 - tr_y1) // 2
+
+        def lerp(c1, c2, t):
+            return tuple(int(a + (b - a) * t) for a, b in zip(c1, c2))
+
+        # Track colors: Off (grafite escuro suave) -> On (âmbar dourado Nebula #e2af62)
+        fill_col = lerp((42, 42, 46), (226, 175, 98), val)
+        out_col = lerp((68, 68, 76), (242, 198, 134), val)
+        d.rounded_rectangle((tr_x1, tr_y1, tr_x2, tr_y2), radius=tr_r,
+                            fill=fill_col, outline=out_col, width=max(1, int(1.5 * S)))
+
+        # Knob: 18px de diâmetro dentro de trilho de 24px de altura (3px de margem)
+        k_diam = 18 * S
+        k_y = (H - k_diam) // 2
+        min_x = tr_x1 + 3 * S
+        max_x = tr_x2 - 3 * S - k_diam
+        k_x = min_x + (max_x - min_x) * val
+
+        # Sombra suave sob o botão
+        d.ellipse((k_x, k_y + int(0.75 * S), k_x + k_diam, k_y + k_diam + int(0.75 * S)),
+                  fill=(15, 15, 18, 60))
+
+        # Botão circular deslizante: off-white acetinado para marfim brilhante
+        k_col = lerp((224, 220, 214), (255, 255, 255), val)
+        k_out = lerp((188, 184, 178), (248, 244, 238), val)
+        d.ellipse((k_x, k_y, k_x + k_diam, k_y + k_diam),
+                  fill=k_col, outline=k_out, width=max(1, int(0.75 * S)))
+
+        res = img.resize((width, height), Image.Resampling.LANCZOS)
+        return ImageTk.PhotoImage(res)
+
     def _draw(self) -> None:
-        self.delete("all")
-        width = max(54, self.winfo_width())
+        if not self.winfo_exists():
+            return
+        width = max(52, self.winfo_width())
         height = max(28, self.winfo_height())
-        track = "#ead3ae" if self._display >= 0.5 else "#414144"
-        knob = "#f7f1e8" if self._value else "#706a62"
-        self._rounded(1, 2, width - 1, height - 2, 14, fill=track, outline=track)
-        center_x = 14 + (width - 28) * self._display
-        self.create_oval(center_x - 10, height // 2 - 10, center_x + 10, height // 2 + 10,
-                         fill=knob, outline=knob)
+        bg_rgb = self._get_bg_rgb()
+        cache_key = (round(self._display, 2), bg_rgb, width, height)
+        if cache_key not in self._CACHE:
+            self._CACHE[cache_key] = self._render_image(self._display, bg_rgb, width, height)
+        self._photo = self._CACHE[cache_key]
+        self.delete("all")
+        self.create_image(0, 0, image=self._photo, anchor="nw")
 
     def _animate(self) -> None:
         if self._animation is not None:
             self.after_cancel(self._animation)
         target = 1.0 if self._value else 0.0
+
         def step():
             distance = target - self._display
             if abs(distance) < 0.04:
@@ -203,16 +257,8 @@ class SwitchNebula(tk.Canvas):
             self._display += distance * 0.35
             self._draw()
             self._animation = self.after(16, step)
-        step()
 
-    def _rounded(self, x1, y1, x2, y2, radius, **kwargs):
-        self.create_rectangle(x1 + radius, y1, x2 - radius, y2, **kwargs)
-        self.create_rectangle(x1, y1 + radius, x2, y2 - radius, **kwargs)
-        for x, y, start in ((x1, y1, 90), (x2 - 2 * radius, y1, 0),
-                            (x2 - 2 * radius, y2 - 2 * radius, 270),
-                            (x1, y2 - 2 * radius, 180)):
-            self.create_arc(x, y, x + 2 * radius, y + 2 * radius,
-                            start=start, extent=90, **kwargs)
+        step()
 
 
 class PainelArredondado(tk.Canvas):
@@ -369,6 +415,7 @@ class InterfaceNebula:
             self._executar_controle_remoto,
             self._estado_controle_remoto,
             lambda: self.janela.after(0, self.mostrar_janela),
+            tools_provider=lambda: self.nebula.dispatcher if self.nebula else None,
         )
         self.aviso_bandeja_exibido = False
         self.proxima_atualizacao_codex = 0.0
@@ -2004,6 +2051,10 @@ class InterfaceNebula:
             return
         self.grupo_entrada.delete(0, "end")
 
+    def _encaminhar_codex(self, texto: str) -> None:
+        self.grupo.enviar(texto, participantes=("codex",))
+        self._evento("abrir_codex", True)
+
     def _adicionar_mensagem_grupo(self, mensagem: dict[str, object]) -> None:
         autor = str(mensagem.get("autor", "Participante"))
         texto = str(mensagem.get("texto", ""))
@@ -2303,6 +2354,7 @@ class InterfaceNebula:
                 voz,
                 ao_solicitar_texto=lambda: self._evento("solicitar_texto", True),
                 iniciar_muda=True,
+                ao_encaminhar_codex=self._encaminhar_codex,
             )
             self._evento("sistema", "Nebula pronta. Aguardando um nome de ativação.")
             self._evento("pronto", True)
@@ -2423,6 +2475,9 @@ class InterfaceNebula:
                     self.entrada.focus_set()
                 elif tipo == "grupo_mensagem" and isinstance(valor, dict):
                     self._adicionar_mensagem_grupo(valor)
+                elif tipo == "abrir_codex":
+                    self.mostrar_janela()
+                    self.mostrar_aba("grupo")
                 elif tipo == "grupo_status":
                     self.grupo_status.configure(text=str(valor), fg=SECUNDARIO)
                 elif tipo == "grupo_ocupado":

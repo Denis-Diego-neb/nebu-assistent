@@ -26,6 +26,7 @@ from urllib.parse import quote_plus
 from app_launcher import Aplicativo, IniciadorAplicativos
 from abajur_wifi import ErroAbajur, interpretar_comandos_abajur
 from abajur_tuya import ConfiguracaoTuya, ControleAbajurTuya
+from modules.iot.lights import ControleAbajur, executar_pedidos_abajur
 from ar_ir_direto import ControleArDireto
 from device_presets import (
     Presets,
@@ -37,7 +38,11 @@ from device_presets import (
 )
 from captura_tela import capturar_tela
 from controles_windows import ajustar_volume_youtube, salvar_replay_nvidia
-from conversa_local import AcaoQwen, ConversaLocal
+from integrations.llm.qwen import ConversaLocal
+from core.action_contracts import AcaoQwen
+from core.legacy_actions import comando_canonico
+from core.bootstrap import criar_dispatcher
+from integrations.codex.client import CodexClient
 from config_modelo import qwen_ativa
 from lexicon import import_dictionary, learn, lookup
 from leitor_boost_visual import (
@@ -58,7 +63,6 @@ from modo_rpm import ErroModoBoost, ErroModoRPM, ModoBoost, ModoRPM
 from teclado_openrgb import OpenRGBKeyboardError, TecladoKumaraOpenRGB, criar_teclado_kumara
 from teclado_evision import TecladoKumaraUSB
 from notas import criar_e_abrir_nota
-from piadas import escolher_piada
 from reconhecedor_musica import identificar_musica
 from youtube_player import primeiro_video
 
@@ -352,24 +356,6 @@ class Saida(Protocol):
     def falar(self, texto: str) -> None: ...
 
 
-class ControleAbajur(Protocol):
-    def energia(self, ligar: bool) -> None: ...
-    def cor(self, nome: str) -> None: ...
-    def temperatura(self, nome: str) -> None: ...
-    def brilho(self, percentual: int) -> None: ...
-    def ajustar_brilho(self, variacao: int) -> int: ...
-    def definir_intensidade_ritmo(self, percentual: int) -> int: ...
-    def ajustar_intensidade_ritmo(self, variacao: int) -> int: ...
-    def iniciar_ritmo_navegador(self, cor_fixa: tuple[int, int, int] | None = None) -> None: ...
-    def parar_ritmo_navegador(self) -> None: ...
-    def iniciar_modo_tocha(self) -> None: ...
-    def parar_modo_tocha(self) -> None: ...
-    def salvar_cor(self, nome: str, especificacao: str) -> str: ...
-    def salvar_cor_atual(self, nome: str) -> str: ...
-    def usar_cor_salva(self, nome: str) -> None: ...
-    def rgb(self, vermelho: int, verde: int, azul: int) -> None: ...
-
-
 class Voz:
     """Usa voz neural feminina e recorre ao SAPI quando estiver offline."""
 
@@ -650,6 +636,7 @@ class Nebula:
         abrir_navegador: bool = True,
         ao_solicitar_texto: Callable[[], None] | None = None,
         iniciar_muda: bool = False,
+        ao_encaminhar_codex: Callable[[str], None] | None = None,
     ) -> None:
         self._saida_original = saida
         self._saida_silenciavel = SaidaSilenciavel(
@@ -668,6 +655,8 @@ class Nebula:
         self.ao_solicitar_texto = ao_solicitar_texto
         self.iniciador = IniciadorAplicativos()
         self.conversa = ConversaLocal()
+        self._execution_lock = threading.RLock()
+        self.codex = CodexClient(ao_encaminhar_codex, ao_responder=self.saida.falar)
         self._controle_abajur: ControleAbajur | None = None
         self._controle_abajur_lock = threading.RLock()
         self._controle_ar = ControleArDireto()
@@ -684,7 +673,6 @@ class Nebula:
         self._controle_lampada_selecao: str | None = None
         self._alvos_modo = self._carregar_alvos_modo()
         self._cor_teclado_boost = self._carregar_cor_teclado_boost()
-        self._executando_traducao_qwen = False
         self._ultimo_comando_abajur_falho: str | None = None
         self._independent = False
         self._devices = device_defaults()
@@ -694,6 +682,9 @@ class Nebula:
         self._keyboard_native_output: object | None = None
         self._active_preset: str | None = None
         self._presets = Presets(self._arquivo_preferencias_controle().with_name("device_presets.json"))
+        self.dispatcher = criar_dispatcher(self)
+        self.conversa.registry = self.dispatcher.registry
+        self.conversa.preferir_modelo = True
 
     @staticmethod
     def _alvos_padrao() -> dict[str, dict[str, bool]]:
@@ -1882,6 +1873,9 @@ class Nebula:
         pedidos = interpretar_comandos_abajur(comando)
         if not pedidos:
             return False
+        return self._executar_pedidos_abajur(pedidos, comando)
+
+    def _executar_pedidos_abajur(self, pedidos, comando: str) -> bool:
         if self._independent:
             # Comandos falados do abajur não encerram os efeitos dos outros dispositivos.
             acao = pedidos[0].acao
@@ -1889,6 +1883,7 @@ class Nebula:
             if acao in {"musica_pc", "tocha_iniciar"}:
                 self._controle_dispositivo("device.mode", {"device": "lamp", "mode": mode})
                 self.saida.falar("Modo do abajur atualizado." if not self._device_errors.get("lamp") else self._device_errors["lamp"])
+                self._ultimo_comando_abajur_falho = comando if self._device_errors.get("lamp") else None
                 return True
             from copy import deepcopy
             novo = deepcopy(self._devices)
@@ -1896,167 +1891,22 @@ class Nebula:
             self._aplicar_dispositivos(novo)
         else:
             self._encerrar_modo_ambilight()
-        confirmacoes: list[str] = []
-        try:
-            controle = self._obter_controle_abajur()
-            for pedido in pedidos:
-                if pedido.acao == "energia":
-                    ligar = bool(pedido.valor)
-                    controle.energia(ligar)
-                    confirmacoes.append("Abajur ligado" if ligar else "Abajur desligado")
-                elif pedido.acao == "cor":
-                    controle.cor(str(pedido.valor))
-                    confirmacoes.append(f"cor {pedido.valor}")
-                elif pedido.acao == "temperatura":
-                    controle.temperatura(str(pedido.valor))
-                    confirmacoes.append(f"luz {pedido.valor}")
-                elif pedido.acao == "brilho":
-                    percentual = int(pedido.valor)  # type: ignore[arg-type]
-                    controle.brilho(percentual)
-                    confirmacoes.append(f"brilho em {percentual} por cento")
-                elif pedido.acao == "brilho_relativo":
-                    variacao = int(pedido.valor)  # type: ignore[arg-type]
-                    percentual = controle.ajustar_brilho(variacao)
-                    verbo = "reduzido" if variacao < 0 else "aumentado"
-                    confirmacoes.append(
-                        f"brilho {verbo} em {abs(variacao)} por cento, agora em {percentual} por cento"
-                    )
-                elif pedido.acao == "intensidade_ritmo":
-                    percentual = controle.definir_intensidade_ritmo(
-                        int(pedido.valor)  # type: ignore[arg-type]
-                    )
-                    confirmacoes.append(
-                        f"intensidade do pulso em {percentual} por cento"
-                    )
-                elif pedido.acao == "intensidade_ritmo_relativa":
-                    variacao = int(pedido.valor)  # type: ignore[arg-type]
-                    percentual = controle.ajustar_intensidade_ritmo(
-                        variacao
-                    )
-                    confirmacoes.append(
-                        f"intensidade do pulso agora em {percentual} por cento"
-                    )
-                elif pedido.acao == "musica_pc":
-                    cor_fixa = pedido.valor if isinstance(pedido.valor, tuple) else None
-                    controle.iniciar_ritmo_navegador(cor_fixa)
-                    confirmacoes.append(
-                        "pulso em cor fixa ativado; deixe a música tocando no navegador"
-                        if cor_fixa else
-                        "ritmo ativado e aguardando áudio do navegador; Discord e outros aplicativos ficam de fora"
-                    )
-                elif pedido.acao == "musica_parar":
-                    controle.parar_ritmo_navegador()
-                    confirmacoes.append("animação musical do abajur desativada")
-                elif pedido.acao == "tocha_iniciar":
-                    controle.iniciar_modo_tocha()
-                    confirmacoes.append("modo tocha ativado")
-                elif pedido.acao == "tocha_parar":
-                    controle.parar_modo_tocha()
-                    confirmacoes.append("modo tocha desativado")
-                elif pedido.acao == "salvar_cor":
-                    especificacao, nome = pedido.valor  # type: ignore[misc]
-                    hexadecimal = controle.salvar_cor(nome, especificacao)
-                    confirmacoes.append(f"cor {hexadecimal} salva como {nome}")
-                elif pedido.acao == "salvar_cor_atual":
-                    nome = str(pedido.valor)
-                    hexadecimal = controle.salvar_cor_atual(nome)
-                    confirmacoes.append(f"cor atual {hexadecimal} salva como {nome}")
-                elif pedido.acao == "usar_cor_salva":
-                    nome = str(pedido.valor)
-                    controle.usar_cor_salva(nome)
-                    confirmacoes.append(f"cor salva {nome} aplicada")
-                elif pedido.acao == "rgb":
-                    vermelho, verde, azul = pedido.valor  # type: ignore[misc]
-                    controle.rgb(vermelho, verde, azul)
-                    confirmacoes.append(f"cor RGB {vermelho}, {verde}, {azul}")
-        except (ErroAbajur, OSError) as exc:
-            self._ultimo_comando_abajur_falho = comando
-            prefixo = f"Consegui ajustar {', '.join(confirmacoes)}. " if confirmacoes else ""
-            self.saida.falar(f"{prefixo}Não consegui concluir o controle do abajur. {exc}")
-            return True
-        self._ultimo_comando_abajur_falho = None
-        if len(confirmacoes) == 1 and confirmacoes[0].startswith("Abajur"):
-            self.saida.falar(confirmacoes[0] + ".")
-        elif confirmacoes:
-            self.saida.falar("Ajustei " + " e ".join(confirmacoes) + ".")
+        resultado = executar_pedidos_abajur(pedidos, self._obter_controle_abajur)
+        self._ultimo_comando_abajur_falho = comando if resultado.falhou else None
+        if resultado.mensagem:
+            self.saida.falar(resultado.mensagem)
         return True
 
-    @staticmethod
-    def _comando_canonico_qwen(acao: AcaoQwen) -> str:
-        """Converte somente ações validadas da Qwen no vocabulário da Nebu."""
-        argumento = acao.argumento
-        fixos = {
-            "abajur_ligar": "ligue o abajur",
-            "abajur_desligar": "desligue o abajur",
-            "abajur_musica_iniciar": "ative o modo musica do abajur",
-            "abajur_musica_parar": "pare o modo musica do abajur",
-            "abajur_musica_intensidade_aumentar": "aumente a intensidade do pulso",
-            "abajur_musica_intensidade_diminuir": "diminua a intensidade do pulso",
-            "abajur_tocha_iniciar": "ative o modo tocha",
-            "abajur_tocha_parar": "pare o modo tocha",
-            "modo_rpm_iniciar": "ative o modo rpm",
-            "modo_rpm_parar": "pare o modo rpm",
-            "modo_rpm_status": "status do modo rpm",
-            "modo_boost_iniciar": "ative o modo boost",
-            "modo_boost_parar": "pare o modo boost",
-            "modo_boost_status": "status do modo boost",
-            "modo_ambilight_iniciar": "ative o modo ambilight",
-            "modo_ambilight_parar": "pare o modo ambilight",
-            "modo_ambilight_status": "status do modo ambilight",
-            "pausar_midia": "pause a musica",
-            "continuar_midia": "continue a musica",
-            "aumentar_volume": "aumente o volume",
-            "diminuir_volume": "diminua o volume",
-            "capturar_tela": "tire um print da tela",
-            "salvar_clipe": "clipe isso",
-            "identificar_musica": "que musica esta tocando",
-            "ver_horas": "que horas sao",
-            "abrir_emails": "abra meus emails",
-            "desligar_pc": "desligue o pc",
-        }
-        if acao.acao in fixos:
-            return fixos[acao.acao]
-        if acao.acao == "abajur_cor":
-            if argumento.startswith("#"):
-                return f"deixe o abajur hexadecimal {argumento[1:]}"
-            return f"deixe o abajur {argumento}"
-        if acao.acao == "abajur_temperatura":
-            return f"deixe a luz {argumento}"
-        if acao.acao == "abajur_brilho":
-            return f"coloque o brilho do abajur em {argumento} por cento"
-        if acao.acao == "abajur_musica_intensidade":
-            return f"coloque a intensidade do pulso em {argumento} por cento"
-        if acao.acao == "abajur_diminuir_brilho":
-            return f"diminua o brilho do abajur {argumento}%"
-        if acao.acao == "abajur_aumentar_brilho":
-            return f"aumente o brilho do abajur {argumento}%"
-        prefixos = {
-            "abrir_aplicativo": "abra",
-            "fechar_aplicativo": "feche",
-            "tocar_youtube": "toque",
-            "pesquisar_youtube": "pesquise",
-            "pesquisar_google": "pesquise",
-            "criar_nota": "escreva no bloco de notas",
-        }
-        if acao.acao == "pesquisar_youtube":
-            return f"pesquise {argumento} no youtube"
-        prefixo = prefixos.get(acao.acao)
-        if prefixo:
-            return f"{prefixo} {argumento}"
-        raise RuntimeError(f"ação da Qwen sem executor: {acao.acao}")
+    _comando_canonico_qwen = staticmethod(comando_canonico)
 
     def _executar_acoes_qwen(self, acoes: tuple[AcaoQwen, ...], pergunta: str) -> None:
-        self._executando_traducao_qwen = True
+        chamadas = [{"name": acao.acao, "arguments": {"argumento": acao.argumento}} for acao in acoes]
         try:
-            for acao in acoes:
-                comando = self._comando_canonico_qwen(acao)
-                self.executar(comando)
-                # Confirmações de ações destrutivas e nomes ambíguos precisam
-                # ser respondidas pelo usuário antes de continuar a sequência.
-                if self.comando_pendente is not None:
-                    break
+            resultados = self.dispatcher.execute_plan(chamadas)
+            for resultado in resultados:
+                if resultado.get("destination") == "codex":
+                    self.saida.falar(resultado["message"])
         finally:
-            self._executando_traducao_qwen = False
             self._pergunta_em_processamento = pergunta
             if self._ultima_resposta:
                 self._ultima_pergunta = pergunta
@@ -2270,6 +2120,43 @@ class Nebula:
         self._abrir("https://www.google.com/search?q=" + quote_plus(pesquisa))
 
     def executar(self, comando: str) -> bool:
+        with self._execution_lock:
+            normalizado = normalizar_texto(comando).strip(" ,.!?")
+            local = (
+                self.aguardando_resposta
+                or normalizado in {"sair", "encerrar", "tchau", "cancelar", "cancela",
+                                   "tente novamente", "tenta novamente", "tente de novo",
+                                   "tenta de novo", "repita", "repete"}
+                or interpretar_comando_feedback(comando.lower()) is not None
+                or interpretar_comando_correcao(comando.lower()) is not None
+                or interpretar_comando_contexto(comando.lower()) is not None
+                or voice_preset(comando.lower()) is not None
+            )
+            if qwen_ativa() and not local:
+                return self._consultar_qwen(comando.strip())
+            return self._executar_local(comando)
+
+    def _consultar_qwen(self, comando_original: str) -> bool:
+        self._pergunta_em_processamento = comando_original
+        try:
+            resultado_qwen = self.conversa.interpretar_ou_responder(comando_original)
+        except Exception as exc:
+            print(f"Qwen no notebook indisponível ou resposta inválida: {exc}")
+            self.saida.falar(
+                "A Qwen no notebook não respondeu corretamente, então não consegui interpretar "
+                f"esse pedido. Verifique se o Ollama e o modelo {self.conversa.modelo} estão ativos."
+            )
+            return True
+        if resultado_qwen.tipo == "comando":
+            try:
+                self._executar_acoes_qwen(resultado_qwen.acoes, comando_original)
+            except ValueError:
+                self.saida.falar("A chamada proposta não corresponde ao contrato das tools disponíveis.")
+        else:
+            self.saida.falar(resultado_qwen.resposta)
+        return True
+
+    def _executar_local(self, comando: str) -> bool:
         """Executa um comando. Retorna False quando a assistente deve encerrar."""
         comando_original = comando.lower().strip(" ,.!?")
         preset = voice_preset(comando_original)
@@ -2642,18 +2529,6 @@ class Nebula:
             return True
 
         if any(
-            pedido in comando
-            for pedido in (
-                "conte uma piada", "conta uma piada", "me conte uma piada",
-                "me conta uma piada", "faca uma piada", "me faca rir",
-                "piada de humor negro", "piada de humor questionavel",
-                "conte outra piada", "conta outra piada",
-            )
-        ):
-            self.saida.falar(escolher_piada())
-            return True
-
-        if any(
             pergunta in comando
             for pergunta in ("quem e voce", "quem voce e")
         ):
@@ -2687,30 +2562,14 @@ class Nebula:
             self.pesquisar_google(pesquisa)
             return True
 
-        if self._executando_traducao_qwen:
-            self.saida.falar("A Qwen traduziu o pedido, mas a ação não passou pela validação da Nebu.")
-            return True
-
         if not qwen_ativa():
             self.saida.falar(
                 "Não reconheci esse pedido. A Qwen está desativada para poupar o notebook."
             )
             return True
 
-        try:
-            resultado_qwen = self.conversa.interpretar_ou_responder(comando_original)
-        except Exception as exc:
-            print(f"Qwen no notebook indisponível ou resposta inválida: {exc}")
-            self.saida.falar(
-                "A Qwen no notebook não respondeu corretamente, então não consegui interpretar "
-                f"esse pedido. Verifique se o Ollama e o modelo {self.conversa.modelo} estão ativos."
-            )
-            return True
-        if resultado_qwen.tipo == "comando":
-            self._executar_acoes_qwen(resultado_qwen.acoes, comando_original)
-        else:
-            self.saida.falar(resultado_qwen.resposta)
         return True
+
 
 
 def iniciar_texto(nebula: Nebula) -> None:

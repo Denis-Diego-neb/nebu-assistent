@@ -8,6 +8,8 @@ if (!versionMatch.find()) {
 def nebulaVersionName = versionMatch.group(1)
 def versionParts = nebulaVersionName.tokenize('.').collect { it as int }
 def nebulaVersionCode = versionParts[0] * 10000 + versionParts[1] * 100 + versionParts[2]
+def nebulaPowerToken = System.getenv('NEBULA_POWER_TOKEN') ?: ''
+def escapedPowerToken = nebulaPowerToken.replace('\\', '\\\\').replace('"', '\\"')
 
 android {
     namespace 'com.nebula.assistant'
@@ -18,5 +20,7 @@ android {
         targetSdk 35
         versionCode nebulaVersionCode
         versionName nebulaVersionName
+        buildConfigField 'String', 'NEBULA_POWER_TOKEN', '"' + escapedPowerToken + '"'
     }
+    buildFeatures { buildConfig true }
 }

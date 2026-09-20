@@ -45,9 +45,10 @@ MAX_COMMAND_CHARS = 4_000
 MAX_PROMPT_CHARS = 20_000
 LOGIN_WINDOW_SECONDS = 15 * 60
 LOGIN_MAX_FAILURES = 8
-POWER_TOKEN = os.environ.get(
-    "NEBULA_POWER_TOKEN", "npw_A71_x99e_8f4c2a91d7604b3e"
-)
+_POWER_TOKEN_CONFIGURADO = os.environ.get("NEBULA_POWER_TOKEN", "").strip()
+# Mantém os serviços locais testáveis, mas não cria uma credencial previsível.
+# Integrações entre processos/dispositivos exigem NEBULA_POWER_TOKEN explícito.
+POWER_TOKEN = _POWER_TOKEN_CONFIGURADO or secrets.token_urlsafe(32)
 
 
 LOGIN_HTML = '''<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nebula — acesso</title><style>body{font-family:system-ui;background:#f5f7fb;color:#172033;margin:0}.card{max-width:420px;margin:15vh auto;background:white;padding:28px;border-radius:18px;box-shadow:0 8px 30px #17203318}input,button{box-sizing:border-box;width:100%;padding:14px;border-radius:12px;font:inherit}input{border:1px solid #d7dee8}button{margin-top:12px;border:0;background:#278cf5;color:white;font-weight:700}.status{color:#667085}</style></head><body><main class="card"><h1>Nebula</h1><p>Informe o PIN exibido no computador.</p><form id="login"><input id="pin" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required><button>Conectar</button></form><p id="status" class="status"></p></main><script>document.getElementById('login').onsubmit=async e=>{e.preventDefault();const status=document.getElementById('status');status.textContent='Conectando…';try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:document.getElementById('pin').value})});const j=await r.json();if(!r.ok)throw Error(j.error||'Falha');location.replace('/')}catch(error){status.textContent=error.message}}</script></body></html>'''
@@ -147,6 +148,7 @@ class State:
         self.control_status_callback = None
         self.show_callback = None
         self.group_bridge = None
+        self.tools_provider = None
         self.conversation: list[dict[str, object]] = list(data.get("conversation", []))[-100:]
         self.codex_sessions: dict[str, str] = dict(data.get("codex_sessions", {}))
         # Mantém a última posição conhecida mesmo quando o celular fica offline.
@@ -474,6 +476,12 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path in ("/icon-192.png", "/icon-512.png"):
             body = make_icon(192 if "192" in parsed.path else 512); self.send_response(200); self.send_header("Content-Type", "image/png"); self.send_header("Cache-Control", "public, max-age=86400"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body); return
         if parsed.path == "/api/session": self.json_response(200 if self.authorized() else 401, {"ok": self.authorized()}); return
+        if parsed.path == "/api/tools":
+            if not self.authorized(): self.json_response(401, {"error": "Não autorizado"}); return
+            executor = STATE.tools_provider() if STATE.tools_provider else None
+            if executor is None:
+                self.json_response(503, {"error": "Executor indisponível."}); return
+            self.json_response(200, {"tools": executor.list_tools()}); return
         if parsed.path == "/api/state":
             if not self.authorized(): self.json_response(401, {"error": "Não autorizado"}); return
             self.json_response(200, {"paused": STATE.paused, "project": STATE.selected_project}); return
@@ -603,6 +611,15 @@ class Handler(BaseHTTPRequestHandler):
                 self.json_response(403, {"error": "PIN incorreto"})
             return
         if not self.authorized(): self.json_response(401, {"error": "Não autorizado"}); return
+        if self.path == "/api/tools/call":
+            executor = STATE.tools_provider() if STATE.tools_provider else None
+            if executor is None:
+                self.json_response(503, {"error": "Executor indisponível."}); return
+            try:
+                result = executor.call_tool(data)
+            except ValueError as exc:
+                self.json_response(400, {"error": str(exc)}); return
+            self.json_response(200, result); return
         if self.path == "/api/transfer/message":
             try:
                 encoded = data.pop("data", None)
@@ -862,6 +879,7 @@ def start_server(
     control_callback=None,
     control_status_callback=None,
     show_callback=None,
+    tools_provider=None,
 ) -> ThreadingHTTPServer:
     STATE.pause_callback = pause_callback
     STATE.command_callback = command_callback
@@ -870,6 +888,7 @@ def start_server(
     STATE.control_callback = control_callback
     STATE.control_status_callback = control_status_callback
     STATE.show_callback = show_callback
+    STATE.tools_provider = tools_provider
     # O app tenta a LAN como rota de recuperação quando o hub/Tailscale oscila.
     # Toda a API continua protegida por PIN/token e a regra do Firewall limita
     # esta porta à rede doméstica.
