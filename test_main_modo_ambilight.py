@@ -183,6 +183,9 @@ class IntegracaoMainAmbilightTests(unittest.TestCase):
             patch.object(ConfiguracaoTuya, "carregar", return_value=config),
         ):
             self.assertTrue(self.nebula.executar("ative o modo ambilight"))
+            modo = ModoAmbilightFalso.instancias[-1]
+            self.assertIsNotNone(modo.saida_secundaria)
+            self.assertIsNone(modo.saida_zonas)
             self.assertEqual(self.nebula.estado_controle()["mode"], "ambilight")
             self.assertIn("Kumara", self.saida.mensagens[-1])
             self.nebula.executar("pare o modo ambilight")

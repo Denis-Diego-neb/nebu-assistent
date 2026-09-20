@@ -1,0 +1,36 @@
+{
+  "id": "sprint_03_youtube",
+  "objective": "Extrair as acoes de pesquisar e tocar YouTube do host para modules/media/youtube.py, mantendo tools diretas e o comportamento existente.",
+  "evidence": [
+    {
+      "path": "main.py",
+      "symbols": [
+        "Nebula.pesquisar_youtube",
+        "Nebula.tocar_youtube"
+      ]
+    },
+    {
+      "path": "youtube_player.py",
+      "symbols": ["primeiro_video"]
+    },
+    {
+      "path": "core/bootstrap.py",
+      "symbols": ["criar_dispatcher"]
+    },
+    {
+      "path": "modules/iot/lights.py",
+      "symbols": ["pedido_da_tool"]
+    },
+    {
+      "path": "modules/iot/ambilight.py",
+      "symbols": ["registrar_tools_ambilight"]
+    }
+  ],
+  "acceptance": [
+    "As tools tocar_youtube e pesquisar_youtube executam argumentos validados diretamente, sem converter para frases.",
+    "O novo modulo nao importa main.py, Qwen, HTTP ou MCP.",
+    "Pesquisa vazia, mensagens existentes e abertura do navegador preservam o comportamento atual.",
+    "Rede e abertura do navegador sao injetaveis ou simuladas nos testes.",
+    "Nenhum teste acessa YouTube ou abre navegador real."
+  ]
+}

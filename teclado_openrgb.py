@@ -128,6 +128,10 @@ def iniciar_servidor_openrgb(timeout: float = 18.0) -> None:
 
 
 class TecladoKumaraOpenRGB:
+    # O OpenRGB recebe a matriz completa pelo proprio servidor e preserva o
+    # efeito multizona usado atualmente.
+    ambilight_multizona_seguro = True
+
     """Aplica uma cor uniforme e restaura todas as teclas ao encerrar."""
 
     def __init__(self) -> None:

@@ -27,6 +27,7 @@ from app_launcher import Aplicativo, IniciadorAplicativos
 from abajur_wifi import ErroAbajur, interpretar_comandos_abajur
 from abajur_tuya import ConfiguracaoTuya, ControleAbajurTuya
 from modules.iot.lights import ControleAbajur, executar_pedidos_abajur
+from modules.iot.ambilight import selecionar_saidas_teclado
 from ar_ir_direto import ControleArDireto
 from device_presets import (
     Presets,
@@ -1669,12 +1670,12 @@ class Nebula:
                 controle.liberar_animacao_externa(modo)
         return True, modo.erro
 
-    def _iniciar_modo_ambilight(self, *, hibrido: bool = False) -> None:
+    def _iniciar_modo_ambilight(self, *, hibrido: bool = False) -> bool:
         with self._modo_ambilight_lock:
             existente = self._modo_ambilight
         if existente is not None and existente.ativo:
             self.saida.falar("O modo Ambilight ja esta ativo.")
-            return
+            return True
         if existente is not None:
             self._encerrar_modo_ambilight()
         if not self._independent:
@@ -1712,6 +1713,7 @@ class Nebula:
                 teclado = self._teclado_independente()
             except (OpenRGBKeyboardError, OSError) as exc:
                 aviso_teclado = str(exc)
+        saidas_teclado = selecionar_saidas_teclado(teclado)
 
         lightbar = None
         aviso_controle = None
@@ -1729,11 +1731,12 @@ class Nebula:
             self.saida.falar(
                 "Nao consegui ativar o Ambilight em nenhum dispositivo." + sufixo
             )
-            return
+            return False
 
         modo = ModoAmbilight(
             controle.enviar_rgb_animacao if controle is not None else (lambda _r, _g, _b: None),
-            saida_zonas=teclado.enviar_zonas if teclado is not None else None,
+            saida_secundaria=saidas_teclado.secundaria,
+            saida_zonas=saidas_teclado.zonas,
             saida_controle=lightbar.set_rgb if lightbar is not None else None,
             capturador=capturador,
         )
@@ -1752,7 +1755,8 @@ class Nebula:
                     controle = None
                     modo = ModoAmbilight(
                         lambda _r, _g, _b: None,
-                        saida_zonas=teclado.enviar_zonas if teclado is not None else None,
+                        saida_secundaria=saidas_teclado.secundaria,
+                        saida_zonas=saidas_teclado.zonas,
                         saida_controle=lightbar.set_rgb if lightbar is not None else None,
                         capturador=capturador,
                     )
@@ -1777,7 +1781,7 @@ class Nebula:
             if lightbar is not None:
                 lightbar.close()
             self.saida.falar(f"Nao consegui ativar o Ambilight. {exc}")
-            return
+            return False
         with self._modo_ambilight_lock:
             self._modo_ambilight = modo
         if self._independent:
@@ -1789,8 +1793,14 @@ class Nebula:
                 if enabled and output is None:
                     self._device_errors[device] = warning or "Dispositivo indisponível."
         if teclado is not None and controle is not None:
+            comportamento_teclado = (
+                "as cores da parte inferior da tela"
+                if saidas_teclado.multizona else
+                "a cor media da tela sem regravar o quadro completo de LEDs"
+            )
             self.saida.falar(
-                "Ambilight ativado. Lampada acompanha a media da tela; Kumara acompanha as cores da parte inferior da tela."
+                "Ambilight ativado. Lampada acompanha a media da tela; "
+                f"Kumara acompanha {comportamento_teclado}."
             )
         elif teclado is not None:
             detalhe = f" {aviso_abajur}." if aviso_abajur else ""
@@ -1807,8 +1817,9 @@ class Nebula:
             self.saida.falar("Lightbar PS4 USB acompanha a media da tela; botoes e vibracao continuam com Steam Input.")
         elif aviso_controle:
             self.saida.falar("PS4 fora do Ambilight: " + aviso_controle)
+        return True
 
-    def _parar_modo_ambilight(self) -> None:
+    def _parar_modo_ambilight(self) -> bool:
         existia, erro = self._encerrar_modo_ambilight()
         if not existia:
             self.saida.falar("O modo Ambilight ja esta desligado.")
@@ -1816,13 +1827,14 @@ class Nebula:
             self.saida.falar(f"Ambilight desligado. Antes de parar, houve uma falha: {erro}")
         else:
             self.saida.falar("Ambilight desligado e iluminacao anterior restaurada.")
+        return erro is None
 
-    def _informar_status_modo_ambilight(self) -> None:
+    def _informar_status_modo_ambilight(self) -> bool:
         with self._modo_ambilight_lock:
             modo = self._modo_ambilight
         if modo is None:
             self.saida.falar("O modo Ambilight esta desligado.")
-            return
+            return True
         status = modo.status()
         if status.get("erro"):
             self.saida.falar(f"O Ambilight encontrou uma falha: {status['erro']}")
@@ -1838,6 +1850,7 @@ class Nebula:
             self.saida.falar(
                 f"Ambilight ativo. Abajur RGB {cor}; teclado RGB {secundaria}."
             )
+        return status.get("erro") is None
 
     def fechar(self) -> None:
         """Encerra animações e handles de hardware da Nebula."""
