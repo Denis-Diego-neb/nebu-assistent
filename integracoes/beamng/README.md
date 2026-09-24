@@ -12,6 +12,13 @@ Com o jogo fechado, execute:
 python integracoes/beamng/install.py --user-folder "$env:LOCALAPPDATA\BeamNG\BeamNG.drive\current"
 ```
 
+Para incluir o flash real de escapamento, use tambem `--game-folder` apontando
+para a instalacao do BeamNG. Isso empacota no mod os tres hooks de afterfire,
+sem editar os arquivos Steam. O protocolo V2 tem 32 bytes e inclui o contador
+`afterfire`; a instalacao somente do protocolo antigo V1 nao permite flashes.
+Reinicie o jogo depois de atualizar o mod. O instalador preserva o zip anterior
+em `backups/nebula_turbo/`.
+
 O instalador cria `mods/nebula_turbo.zip`, sem modificar arquivos da instalação
 Steam ou o mod do SimHub. Protocolos adicionais já vêm habilitados no 0.39.4;
 se estiverem explicitamente desabilitados, o instalador faz backup de

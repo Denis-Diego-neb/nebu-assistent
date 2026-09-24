@@ -23,8 +23,14 @@ import android.os.CancellationSignal;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.View;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
+import android.view.WindowManager;
 import android.webkit.CookieManager;
+import android.webkit.JavascriptInterface;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -75,6 +81,8 @@ public class MainActivity extends Activity {
     private boolean sessionUnlocked;
     private WebView panelWebView;
     private String panelBaseUrl;
+    private boolean panelFullscreen;
+    private boolean panelFallbackTried;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -89,6 +97,8 @@ public class MainActivity extends Activity {
             Intent gauge = new Intent(this, TurboGaugeActivity.class);
             gauge.putExtra("endpoints", new String[]{"http://127.0.0.1:8765", PC_LAN_PANEL, PC_TAILSCALE_PANEL});
             gauge.putExtra("token", POWER_TOKEN);
+            gauge.putExtra("panel_mode", getPreferences(MODE_PRIVATE).getString("instrument_panel", "auto"));
+            gauge.putExtra("turbo_style", prefs.getString("boost_style", "cyber"));
             startActivity(gauge);
             finish();
             return;
@@ -151,8 +161,9 @@ public class MainActivity extends Activity {
         dashboard = new MobileDashboard(this, POWER_TOKEN,
                 notebookEndpoints().toArray(new String[0]),
                 new String[]{PC_LAN_PANEL, PC_TAILSCALE_PANEL},
-            this::requirePhoneCredential);
+            this::requirePhoneCredential, this::openPanelWhenReady);
         powerButton = dashboard.powerButton;
+        panelButton = dashboard.espacoButton;
         status = dashboard.status;
         setContentView(dashboard.root);
     }
@@ -300,6 +311,10 @@ public class MainActivity extends Activity {
 
     private void wakeSucceeded(String message) {
         setButtonState("NEBULA AUTORIZADA", message, false);
+        // Depois que o PIN autorizou o aparelho e o Hub respondeu, entre no
+        // Espaço automaticamente. É ali que ficam o tema de nebulosa e o chat
+        // Dupla; voltar pelo Android ainda retorna ao painel nativo.
+        openPanelWhenReady();
     }
 
     private void openPanelWhenReady() {
@@ -307,15 +322,26 @@ public class MainActivity extends Activity {
         panelOpening = true;
         panelButton.setEnabled(false);
         panelButton.setText("CONECTANDO…");
-        status.setText("Procurando o painel da Nebula no PC e no notebook…");
+        status.setText("Procurando o Espaço da Nebula no PC e no notebook…");
 
         new Thread(() -> {
-            long deadline = System.currentTimeMillis() + 75_000L;
+            long deadline = System.currentTimeMillis() + 100_000L;
             String lastError = "servidor ainda não respondeu";
+            int round = 0;
             while (!isDestroyed() && System.currentTimeMillis() < deadline) {
+                round += 1;
+                // Em casa a LAN responde na primeira volta e a abertura continua
+                // instantânea. Longe, pelo Tailscale, a primeira conexão ainda
+                // precisa furar o NAT ou cair no relé, e esse aperto de mão leva
+                // segundos: com 1,2 s fixo toda tentativa morria antes de o
+                // caminho existir, então ele nunca se estabelecia por mais que o
+                // laço repetisse. Daí crescer a cada volta em vez de insistir
+                // sempre com o mesmo limite curto.
+                int connectMs = Math.min(1500 * round, 9000);
+                int readMs = Math.min(2500 * round, 15000);
                 for (String endpoint : panelEndpoints()) {
                     try {
-                        String token = requestPanelSession(endpoint);
+                        String token = requestPanelSession(endpoint, connectMs, readMs);
                         ui.post(() -> showPanel(endpoint, token));
                         return;
                     } catch (Exception error) {
@@ -335,10 +361,10 @@ public class MainActivity extends Activity {
                 panelOpening = false;
                 waking = false;
                 panelButton.setEnabled(true);
-                panelButton.setText("TENTAR ABRIR PAINEL");
+                panelButton.setText("TENTAR ABRIR O ESPAÇO");
                 setButtonState(
                         "LIGAR NOVAMENTE",
-                        "O sinal foi enviado, mas o painel não respondeu: " + finalError,
+                        "O sinal foi enviado, mas o Espaço não respondeu: " + finalError,
                         true
                 );
             });
@@ -354,13 +380,14 @@ public class MainActivity extends Activity {
         return endpoints;
     }
 
-    private String requestPanelSession(String endpoint) throws Exception {
+    private String requestPanelSession(String endpoint, int connectMs, int readMs)
+            throws Exception {
         HttpURLConnection connection = (HttpURLConnection) new URL(
                 endpoint + "/api/device-session"
         ).openConnection();
         try {
-            connection.setConnectTimeout(1200);
-            connection.setReadTimeout(2500);
+            connection.setConnectTimeout(connectMs);
+            connection.setReadTimeout(readMs);
             connection.setRequestMethod("POST");
             connection.setRequestProperty("X-Nebula-Power-Token", POWER_TOKEN);
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
@@ -399,7 +426,8 @@ public class MainActivity extends Activity {
 
         WebView webView = new WebView(this);
         panelWebView = webView;
-        webView.setBackgroundColor(Color.WHITE);
+        // O Espaço abre em fundo preto: branco piscaria antes da nebulosa.
+        webView.setBackgroundColor(Color.BLACK);
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
@@ -416,21 +444,92 @@ public class MainActivity extends Activity {
                 startActivity(new Intent(Intent.ACTION_VIEW, uri));
                 return true;
             }
+
+            @Override
+            public void onReceivedHttpError(WebView view, WebResourceRequest request,
+                                            WebResourceResponse response) {
+                // Um PC ainda na versão anterior não conhece /espaco/; nesse caso
+                // o painel clássico continua atendendo no mesmo endereço.
+                if (request.isForMainFrame() && !panelFallbackTried
+                        && response.getStatusCode() == 404) {
+                    panelFallbackTried = true;
+                    view.loadUrl(panelBaseUrl + "/");
+                }
+            }
         });
+        webView.addJavascriptInterface(new FullscreenBridge(), "NebulaHost");
         if (isDestroyed() || isFinishing()) { webView.destroy(); return; }
         if (dashboard != null) dashboard.setActive(false);
+        panelFallbackTried = false;
         setContentView(webView);
-        webView.loadUrl(endpoint + "/");
+        webView.loadUrl(endpoint + "/espaco/");
+    }
+
+    /** Ponte de tela cheia usada pelo botão e pelo F11 do front espacial. */
+    private final class FullscreenBridge {
+        @JavascriptInterface
+        public void enterFullscreen() { ui.post(() -> setPanelFullscreen(true)); }
+
+        @JavascriptInterface
+        public void exitFullscreen() { ui.post(() -> setPanelFullscreen(false)); }
+    }
+
+    private void setPanelFullscreen(boolean on) {
+        panelFullscreen = on;
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            WindowInsetsController controller = getWindow().getInsetsController();
+            if (controller != null) {
+                controller.setSystemBarsBehavior(
+                        WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                if (on) controller.hide(WindowInsets.Type.systemBars());
+                else controller.show(WindowInsets.Type.systemBars());
+            }
+        } else if (on) {
+            getWindow().getDecorView().setSystemUiVisibility(
+                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                            | View.SYSTEM_UI_FLAG_FULLSCREEN
+                            | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                            | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                            | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                            | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
+        } else {
+            getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
+        }
+        if (on) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        if (panelWebView != null) {
+            panelWebView.evaluateJavascript(
+                    "window.NebulaFullscreen&&window.NebulaFullscreen.set(" + on + ")", null);
+        }
+    }
+
+    @Override
+    public boolean onKeyDown(int keyCode, KeyEvent event) {
+        // Teclado físico ou Bluetooth: o F11 vale o mesmo que no EXE.
+        if (keyCode == KeyEvent.KEYCODE_F11 && panelWebView != null) {
+            setPanelFullscreen(!panelFullscreen);
+            return true;
+        }
+        if (keyCode == KeyEvent.KEYCODE_ESCAPE && panelFullscreen) {
+            setPanelFullscreen(false);
+            return true;
+        }
+        return super.onKeyDown(keyCode, event);
     }
 
     @Override
     public void onBackPressed() {
+        if (panelFullscreen) {
+            setPanelFullscreen(false);
+            return;
+        }
         if (panelWebView != null) {
             if (panelWebView.canGoBack()) {
                 panelWebView.goBack();
             } else {
                 panelWebView.destroy();
                 panelWebView = null;
+                setPanelFullscreen(false);
                 buildUi();
             }
             return;
@@ -462,11 +561,21 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** Endereco do Tailscale, na faixa 100.64/10 que ele usa para o tailnet. */
+    private static boolean viaTailscale(String endpoint) {
+        return endpoint != null && endpoint.contains("//100.");
+    }
+
     private void sendRelayWake(String endpoint, JSONObject unlockProof) throws Exception {
         HttpURLConnection connection = (HttpURLConnection) new URL(endpoint + "/wake").openConnection();
         try {
-            connection.setConnectTimeout(2500);
-            connection.setReadTimeout(5000);
+            // Este caminho tenta cada endereco uma vez so, sem repetir. Pelo
+            // Tailscale a primeira conexao ainda precisa furar o NAT ou cair no
+            // rele antes de existir, e 2,5 s nao cobriam isso longe de casa; na
+            // LAN o limite curto continua, para nao fazer esperar a toa quando o
+            // endereco simplesmente nao atende.
+            connection.setConnectTimeout(viaTailscale(endpoint) ? 9000 : 2500);
+            connection.setReadTimeout(viaTailscale(endpoint) ? 15000 : 5000);
             connection.setRequestMethod("POST");
             connection.setRequestProperty("X-Nebula-Power-Token", POWER_TOKEN);
             connection.setRequestProperty("Content-Type", "application/json");

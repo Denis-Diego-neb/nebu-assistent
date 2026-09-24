@@ -10,6 +10,7 @@ import os
 import re
 import secrets
 import shutil
+import socket
 import subprocess
 import sys
 import threading
@@ -30,6 +31,7 @@ from wifi_bpm import SENSOR as WIFI_BPM_SENSOR
 from beamng_turbo import SENSOR as BEAMNG_TURBO
 from rocket_overlay import OVERLAY_BRIDGE
 from transfer_chat import CHAT_STORE, MAX_FILE_BYTES
+import front_assets
 
 PORTA = 8765
 PROJETO = (
@@ -43,6 +45,7 @@ MAX_BODY_BYTES = 100_000
 MAX_TRANSFER_BODY_BYTES = MAX_FILE_BYTES * 4 // 3 + 200_000
 MAX_COMMAND_CHARS = 4_000
 MAX_PROMPT_CHARS = 20_000
+ESPACO_TICKET_SEGUNDOS = 90
 LOGIN_WINDOW_SECONDS = 15 * 60
 LOGIN_MAX_FAILURES = 8
 _POWER_TOKEN_CONFIGURADO = os.environ.get("NEBULA_POWER_TOKEN", "").strip()
@@ -139,6 +142,8 @@ class State:
             self.selected_project = str(PROJETO)
         self.sessions: set[str] = {self.device_token}
         self.login_failures: dict[str, list[float]] = {}
+        # Bilhetes de uso único que a própria Nebula emite para abrir o front local.
+        self.espaco_tickets: dict[str, float] = {}
         self.jobs: dict[str, dict[str, object]] = {}
         self.paused = False
         self.pause_callback = None
@@ -358,6 +363,201 @@ orb.addEventListener('click',start);
     )
 
 
+def criar_ticket_espaco() -> str:
+    """Bilhete de uso único para a Nebula abrir o front espacial em 127.0.0.1.
+
+    A janela do front é aberta pelo próprio processo, que não tem como entregar
+    um cookie ao navegador. O bilhete vale uma vez, expira em segundos e só é
+    aceito vindo do loopback — quem está na rede continua precisando do PIN.
+    """
+    ticket = secrets.token_urlsafe(24)
+    agora = time.monotonic()
+    with STATE.lock:
+        STATE.espaco_tickets = {
+            chave: prazo for chave, prazo in STATE.espaco_tickets.items() if prazo > agora
+        }
+        if len(STATE.espaco_tickets) > 8:
+            STATE.espaco_tickets.clear()
+        STATE.espaco_tickets[ticket] = agora + ESPACO_TICKET_SEGUNDOS
+    return ticket
+
+
+def consumir_ticket_espaco(ticket: str) -> str | None:
+    """Troca um bilhete válido por um token de sessão; ``None`` se não servir."""
+    if not ticket:
+        return None
+    agora = time.monotonic()
+    with STATE.lock:
+        prazo = STATE.espaco_tickets.pop(ticket, None)
+        if prazo is None or prazo <= agora:
+            return None
+        token = secrets.token_urlsafe(32)
+        if len(STATE.sessions) >= 32:
+            STATE.sessions = {STATE.device_token}
+        STATE.sessions.add(token)
+    return token
+
+
+def url_espaco(host: str = "127.0.0.1", porta: int = PORTA) -> str:
+    """Endereço do front espacial já com o bilhete de acesso local."""
+    return f"http://{host}:{porta}/espaco/?ticket={criar_ticket_espaco()}"
+
+
+def raiz_colaboracao() -> Path:
+    """Raiz do projeto para o backend da colaboracao.
+
+    Nao da para usar ``PROJETO``: aquilo e a pasta que *contem* projetos
+    (``parent.parent`` no exe), entao o store e o SESSOES.md cairiam um nivel
+    acima. Aqui se procura quem realmente tem ``services/collaboration``.
+    """
+    candidatos = [Path(__file__).resolve().parent]
+    try:
+        executavel = Path(sys.executable).resolve().parent
+        candidatos.extend((executavel, executavel.parent))
+    except (OSError, ValueError):
+        pass
+    for base in candidatos:
+        if (base / "services" / "collaboration").is_dir():
+            return base
+    # Sem a pasta no disco (exe movido para fora do projeto) o _MEIPASS nao
+    # serve: e temporario e some ao fechar. Grava ao lado do executavel.
+    return candidatos[1] if getattr(sys, "frozen", False) and len(candidatos) > 1 else candidatos[0]
+
+
+_COLABORACAO: dict[str, object] = {"api": None, "tentado_em": 0.0}
+_COLABORACAO_PROJETOS: dict[str, object] = {}
+_COLABORACAO_LOCK = threading.RLock()
+COLABORACAO_AUSENTE = (
+    "O painel de colaboracao ainda nao esta disponivel. O backend e mantido pelo "
+    "Codex em services/collaboration/; assim que a API existir, o painel liga sozinho."
+)
+
+
+def liberar_rodadas_orfas(api) -> None:
+    """Destrava conversa e execucao que ficaram presas de um processo anterior.
+
+    As duas travas valem por processo: a thread que responderia morreu junto com
+    a Nebula. Sem isto, o painel fica para sempre em "as duas estao respondendo"
+    e recusa toda rodada nova, sem nenhum botao que resolva - e de fora de casa,
+    pelo celular, nao ha como abrir o banco na mao.
+    """
+    try:
+        estado = api.store.snapshot()
+    except Exception:
+        return
+    conversa = estado.get("active_chat") or {}
+    if conversa.get("id"):
+        try:
+            processo = conversa.get("process")
+            if processo:
+                import psutil
+                from services.collaboration.development_transport import stop_process_tree
+                try:
+                    cli = psutil.Process(processo["pid"])
+                    if abs(cli.create_time() - processo["created"]) < 0.01:
+                        stop_process_tree(cli)
+                except psutil.NoSuchProcess:
+                    pass
+            api.store.end_chat(conversa["id"])
+            api.store.message(conversa["idea_id"], "system",
+                              "Conversa anterior foi encerrada porque a Nebula reiniciou "
+                              "no meio da rodada.", "chat_error")
+        except Exception:
+            pass
+    execucao = estado.get("active_run") or {}
+    identificador = execucao.get("id") if isinstance(execucao, dict) else execucao
+    if identificador:
+        try:
+            api.store.end_run(identificador, "failed")
+        except Exception:
+            pass
+
+
+def colaboracao():
+    with _COLABORACAO_LOCK:
+        return _colaboracao_do_projeto()
+
+
+def _colaboracao_do_projeto():
+    """Carrega ``CollaborationAPI`` sob demanda, sem travar o painel.
+
+    O backend e do outro agente e pode aparecer a qualquer momento; repetir a
+    importacao de tempos em tempos evita exigir reinicio da Nebula. O contrato
+    esta em services/collaboration/README.md: uma instancia por projeto e todo
+    o resto por ``handle(metodo, caminho, corpo)``.
+    """
+    api = _COLABORACAO["api"]
+    projeto = Path(STATE.selected_project).resolve()
+    if not projeto.is_dir():
+        raise ValueError("Selecione uma pasta de projeto existente.")
+    chave = str(projeto).casefold()
+    if api is not None and (not hasattr(api, "store") or api.store.root == projeto):
+        return api
+    if api is not None and chave in _COLABORACAO_PROJETOS:
+        _COLABORACAO["api"] = _COLABORACAO_PROJETOS[chave]
+        return _COLABORACAO["api"]
+    agora = time.monotonic()
+    if _COLABORACAO.get("tentado_projeto") == chave and agora - float(_COLABORACAO["tentado_em"]) < 5:
+        return None
+    _COLABORACAO["tentado_em"] = agora
+    _COLABORACAO["tentado_projeto"] = chave
+    try:
+        # O backend e do outro agente e muda sem passar por aqui. Congelado no
+        # exe, ele envelhece a cada build: foi assim que o chat da Dupla passou
+        # a responder 404 com a rota ja pronta no disco. Por isso a fonte em
+        # disco entra no sys.path e nao se empacota copia nenhuma.
+        raiz = raiz_colaboracao()
+        if str(raiz) not in sys.path:
+            sys.path.insert(0, str(raiz))
+        from services.collaboration.api import CollaborationAPI
+
+        # O backend chama os CLIs sem ferramenta nenhuma. Denis autorizou acesso
+        # real ao repositorio, entao entra o provedor daqui pela porta que o
+        # proprio backend abre, sem editar nada de services/collaboration/.
+        provedor = None
+        try:
+            import colaboracao_ferramentas
+
+            if colaboracao_ferramentas.ativo():
+                provedor = colaboracao_ferramentas.ProvedorComAcesso()
+        except Exception:
+            provedor = None
+        api = CollaborationAPI(projeto, provedor) if provedor else CollaborationAPI(projeto)
+        if provedor is not None:
+            # O store so existe depois da API: e dele que sai a memoria
+            # comprimida entregue a quem voltou de um corte de cota.
+            provedor.store = api.store
+        liberar_rodadas_orfas(api)
+    except Exception:
+        return None
+    _COLABORACAO["api"] = api
+    _COLABORACAO_PROJETOS[chave] = api
+    return api
+
+
+class ServidorExclusivo(ThreadingHTTPServer):
+    """Servidor que não aceita dividir a porta com outro processo.
+
+    No Windows, dois servidores com ``SO_REUSEADDR`` conseguem escutar a mesma
+    porta e as conexões se dividem entre eles de forma imprevisível — foi assim
+    que a ponte do Gemini passou a responder no lugar do painel. Com
+    ``SO_EXCLUSIVEADDRUSE`` o segundo a subir falha na hora, com erro claro,
+    e ainda assim é possível reabrir a porta depois que este processo encerra.
+    """
+
+    allow_reuse_address = False
+
+    def server_bind(self) -> None:
+        if os.name == "nt":
+            try:
+                self.socket.setsockopt(
+                    socket.SOL_SOCKET, getattr(socket, "SO_EXCLUSIVEADDRUSE", 0), 1
+                )
+            except OSError:
+                pass
+        super().server_bind()
+
+
 def find_codex() -> str | None:
     found = shutil.which("codex")
     if found:
@@ -416,6 +616,41 @@ class Handler(BaseHTTPRequestHandler):
             STATE.login_failures.setdefault(self.client_address[0], []).append(time.monotonic())
     def redirect(self, location: str = "/") -> None:
         self.send_response(303); self.send_header("Location", location); self.send_header("Content-Length", "0"); self.end_headers()
+    def loopback(self) -> bool:
+        return self.client_address[0] in ("127.0.0.1", "::1", "::ffff:127.0.0.1")
+    def servir_espaco(self, parsed) -> None:
+        """Front espacial: ``/espaco/`` entrega o index e ``/espaco/<arquivo>`` os assets."""
+        nome = parsed.path[len("/espaco"):].lstrip("/")
+        ticket = parse_qs(parsed.query).get("ticket", [""])[0]
+        token = consumir_ticket_espaco(ticket) if ticket and self.loopback() else None
+        if token:
+            # Sem "Secure": o bilhete só vale no loopback, que não usa HTTPS.
+            self.send_response(303); self.send_header("Location", "/espaco/")
+            self.send_header("Set-Cookie", f"nebula_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=315360000")
+            self.send_header("Content-Length", "0"); self.end_headers(); return
+        if not self.authorized(): self.redirect(); return
+        if not nome:
+            if not parsed.path.endswith("/"): self.redirect("/espaco/"); return
+            nome = "index.html"
+        recurso = front_assets.carregar(nome)
+        if recurso is None:
+            if nome != "index.html": self.send_error(404); return
+            body, tipo = front_assets.INDISPONIVEL.encode(), "text/html; charset=utf-8"
+        else:
+            body, tipo = recurso
+        self.send_response(200); self.send_header("Content-Type", tipo)
+        self.send_header("Cache-Control", "no-store"); self.send_header("Content-Length", str(len(body)))
+        self.end_headers(); self.wfile.write(body)
+    def servir_colaboracao(self, metodo: str, caminho: str, corpo: dict) -> None:
+        """Repassa o pedido ao backend da colaboracao, ja atras da autenticacao."""
+        api = colaboracao()
+        if api is None:
+            self.json_response(503, {"error": COLABORACAO_AUSENTE, "aguardando_backend": True}); return
+        try:
+            status, payload = api.handle(metodo, caminho, corpo)
+        except Exception as exc:
+            self.json_response(502, {"error": f"O backend da colaboração falhou: {exc}"}); return
+        self.json_response(int(status), payload if isinstance(payload, dict) else {"data": payload})
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         if parsed.path == "/api/transfer/messages":
@@ -452,6 +687,8 @@ class Handler(BaseHTTPRequestHandler):
             self.json_response(200, sensor.status()); return
         if parsed.path == "/":
             body = (render_html() if self.authorized() else LOGIN_HTML).encode(); self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.send_header("Cache-Control", "no-store"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body); return
+        if parsed.path == "/espaco" or parsed.path.startswith("/espaco/"):
+            self.servir_espaco(parsed); return
         if parsed.path == "/orb":
             if not self.authorized(): self.redirect(); return
             body = render_orb().encode(); self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.send_header("Cache-Control", "no-store"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body); return
@@ -475,6 +712,9 @@ class Handler(BaseHTTPRequestHandler):
             body = SERVICE_WORKER.encode(); self.send_response(200); self.send_header("Content-Type", "application/javascript; charset=utf-8"); self.send_header("Service-Worker-Allowed", "/"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body); return
         if parsed.path in ("/icon-192.png", "/icon-512.png"):
             body = make_icon(192 if "192" in parsed.path else 512); self.send_response(200); self.send_header("Content-Type", "image/png"); self.send_header("Cache-Control", "public, max-age=86400"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body); return
+        if parsed.path == "/api/collaboration" or parsed.path.startswith("/api/collaboration/"):
+            if not self.authorized(): self.json_response(401, {"error": "Não autorizado"}); return
+            self.servir_colaboracao("GET", parsed.path, {}); return
         if parsed.path == "/api/session": self.json_response(200 if self.authorized() else 401, {"ok": self.authorized()}); return
         if parsed.path == "/api/tools":
             if not self.authorized(): self.json_response(401, {"error": "Não autorizado"}); return
@@ -694,6 +934,8 @@ class Handler(BaseHTTPRequestHandler):
             except (OSError, ValueError) as exc:
                 self.json_response(400, {"error": str(exc)}); return
             self.json_response(200, {"ok": True, "message": "Feedback salvo no PC."}); return
+        if self.path == "/api/collaboration" or self.path.startswith("/api/collaboration/"):
+            self.servir_colaboracao("POST", self.path, data); return
         if self.path == "/api/group":
             bridge = STATE.group_bridge
             if bridge is None: self.json_response(503, {"error": "Grupo ainda não está disponível."}); return
@@ -892,7 +1134,15 @@ def start_server(
     # O app tenta a LAN como rota de recuperação quando o hub/Tailscale oscila.
     # Toda a API continua protegida por PIN/token e a regra do Firewall limita
     # esta porta à rede doméstica.
-    server = ThreadingHTTPServer(("0.0.0.0", PORTA), Handler)
+    try:
+        server = ServidorExclusivo(("0.0.0.0", PORTA), Handler)
+    except OSError as erro:
+        raise OSError(
+            f"A porta {PORTA} já está em uso por outro processo. O painel da Nebula "
+            "precisa dela sozinho; um segundo servidor na mesma porta faz o navegador "
+            "cair no serviço errado. Verifique com "
+            f"'Get-NetTCPConnection -LocalPort {PORTA} -State Listen'."
+        ) from erro
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server
 

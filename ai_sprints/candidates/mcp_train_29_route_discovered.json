@@ -1,0 +1,27 @@
+{
+  "id": "mcp_train_29_route_discovered",
+  "objective": "Exercicio MCP 29/40: Escolha uma rota somente entre tools previamente descobertas. Implemente o exemplo isolado em modules/mcp_training_29.py e seus testes em tests/test_mcp_training_29.py.",
+  "evidence": [
+    {
+      "path": "services/network.py",
+      "symbols": [
+        "DeviceEndpoint",
+        "DeviceConnection.discover",
+        "DeviceConnection.call_tool"
+      ]
+    },
+    {
+      "path": "core/registry.py",
+      "symbols": [
+        "Registry.list_tools"
+      ]
+    }
+  ],
+  "acceptance": [
+    "A implementacao usa somente a biblioteca padrao e nao importa main.py, Qwen, Gemini ou Codex.",
+    "Entradas e saidas sao objetos estruturados; nenhuma funcao interpreta frases do usuario.",
+    "Rede, hardware, relogio e espera, quando necessarios, sao dependencias injetadas.",
+    "Os testes usam unittest, nao acessam rede ou hardware e cobrem sucesso e rejeicao.",
+    "Somente modules/mcp_training_29.py e tests/test_mcp_training_29.py podem ser criados ou alterados."
+  ]
+}

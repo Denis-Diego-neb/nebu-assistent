@@ -16,6 +16,7 @@ final class DevicePanelView extends FrameLayout {
     private final RpmView rpm;
     private TurboTelemetryClient controlClient,turboClient;
     private String localMode;
+    private String serverMode="manual";
     private JSONObject lastState;
     private String lastError;
     DevicePanelView(Context context) {
@@ -31,18 +32,19 @@ final class DevicePanelView extends FrameLayout {
             JSONObject state=data==null?null:data.optJSONObject("state");
             JSONObject devices=state==null?null:state.optJSONObject("devices");
             JSONObject mobile=devices==null?null:devices.optJSONObject("mobile");
-            String mode=localMode!=null?localMode:(mobile==null?"manual":mobile.optString("mode","manual"));
+            if(mobile!=null)serverMode=mobile.optString("mode","manual");
             lastState=state;lastError=error;
-            boolean showTurbo=mode.equals("turbo") && error==null;
-            turbo.setVisibility(showTurbo?VISIBLE:GONE);rpm.setVisibility(showTurbo?GONE:VISIBLE);
-            rpm.update(state,mode,error);
+            renderSelectedMode();
         });
         turboClient.start();controlClient.start();
     }
     void setLocalMode(String mode) {
         localMode=(mode==null || mode.equals("auto"))?null:mode;
-        String selected=localMode==null?"rpm":localMode;
-        boolean showTurbo=selected.equals("turbo") && lastError==null;
+        renderSelectedMode();
+    }
+    private void renderSelectedMode() {
+        String selected=localMode==null?serverMode:localMode;
+        boolean showTurbo=selected.equals("turbo");
         turbo.setVisibility(showTurbo?VISIBLE:GONE);rpm.setVisibility(showTurbo?GONE:VISIBLE);
         rpm.update(lastState,selected,lastError);
     }

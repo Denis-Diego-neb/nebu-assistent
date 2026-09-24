@@ -1,0 +1,83 @@
+/* Console do Home Hub: mesma nebulosa, mesma paleta e o mesmo acento que
+   circula pelo hue do front. Só a densidade muda — aqui o log é o conteúdo. */
+body.hub{min-height:100svh;overflow:hidden}
+body.hub header{height:84px;padding:0 4%}
+body.hub .brand{letter-spacing:.3em;gap:12px}
+.hub-pill{font-size:10px;letter-spacing:.18em;color:#8f8ba0;border:1px solid #ffffff14;border-radius:20px;padding:7px 13px;white-space:nowrap}
+.hub-pill.online{color:var(--accent);border-color:var(--accent-line)}
+.hub-pill.offline{color:#ffa9a9;border-color:#ff8b8b3d}
+
+.hub-main{position:relative;z-index:1;width:min(1180px,calc(100% - 64px));margin:0 auto;
+  height:calc(100svh - 84px);padding-bottom:46px;display:flex;flex-direction:column;gap:14px}
+.hub-main .eyebrow{margin:0}
+
+.hub-metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.hub-metric{border:1px solid #ffffff10;border-radius:18px;background:#0b0912b8;backdrop-filter:blur(18px);padding:16px 18px}
+.hub-metric strong{display:block;font-family:'Manrope','Segoe UI Variable Display','Segoe UI',Roboto,system-ui,sans-serif;
+  font-size:30px;font-weight:300;letter-spacing:-.03em;color:var(--accent);font-variant-numeric:tabular-nums}
+.hub-metric small{display:block;margin-top:6px;font-size:9px;letter-spacing:.2em;color:#807b8e}
+.hub-connection{margin:0;font-size:12px;color:#8b8598}
+
+.hub-panel{border:1px solid #ffffff10;border-radius:20px;background:#0b0912cf;backdrop-filter:blur(20px);padding:16px 20px}
+.hub-panel-top{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.hub-panel h2{margin:0;font-family:'Manrope','Segoe UI Variable Display','Segoe UI',Roboto,system-ui,sans-serif;
+  font-size:15px;font-weight:400;letter-spacing:.02em;color:#ddd6ec}
+.hub-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.hub-button{font-size:12px;color:#bcb7ca;border:1px solid #ffffff17;border-radius:20px;padding:8px 14px;background:#10101870}
+.hub-button:hover{color:var(--accent);border-color:var(--accent-line)}
+.hub-toggle{font-size:11px;color:#7f7a8d;display:flex;align-items:center;gap:6px;cursor:pointer}
+.hub-toggle input{accent-color:var(--accent)}
+.hub-sprints{margin:12px 0 0;font-size:13px;line-height:1.65;color:#bdb5cb;white-space:pre-wrap}
+.hub-sprints.alert{color:#ffc891}
+
+.hub-log-panel{flex:1;min-height:0;display:flex;flex-direction:column;padding-bottom:10px}
+.hub-log{flex:1;min-height:0;overflow:auto;margin-top:12px;padding-right:6px;
+  font-family:'Cascadia Mono',ui-monospace,Consolas,monospace;font-size:12.5px;line-height:1.75;
+  color:#9f99ae;scrollbar-width:thin;scrollbar-color:#3a3350 transparent}
+.hub-log:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+.hub-line{display:block;white-space:pre-wrap;word-break:break-word;border-left:2px solid transparent;padding-left:12px}
+.hub-line .hub-time{color:#5f5a6d;margin-right:12px}
+.hub-line.ok{color:#a9a2bb}
+.hub-line.ok .hub-status{color:var(--accent)}
+.hub-line.denied{color:#e0b3b3;border-left-color:#ff8b8b4d}
+.hub-line.failed{color:#ffb9a3;border-left-color:#ff9c6f4d}
+.hub-line.note{color:#cdc3e2;border-left-color:var(--accent-line)}
+.hub-empty{color:#615c6f;font-style:italic}
+
+@media(max-width:860px){
+  body.hub{overflow:auto}
+  body.hub header{height:70px;padding:0 20px}
+  body.hub .brand{font-size:11px}
+  .hub-main{width:calc(100% - 36px);height:auto;min-height:calc(100svh - 70px)}
+  .hub-metrics{grid-template-columns:repeat(2,1fr)}
+  .hub-metric strong{font-size:24px}
+  .hub-log{max-height:52svh}
+  .bottom-caption{position:static;margin:18px 0 26px;left:auto}
+}
+body.is-fullscreen .bottom-caption{display:none}
+
+/* ------------------------------------------------------------- terminal */
+.hub-terminal-form { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 6px; }
+.hub-terminal-form input {
+  flex: 1 1 260px; min-width: 0; padding: 9px 12px; border-radius: 9px;
+  border: 1px solid hsl(var(--accent-hue) 42% 34% / .55);
+  background: #0b0a14cc; color: #ded8ee; font: inherit;
+  font-family: "Cascadia Mono", ui-monospace, "Consolas", monospace; font-size: 13px;
+}
+.hub-terminal-form input#terminal-cwd { flex: 0 1 190px; }
+.hub-terminal-form input:focus-visible {
+  outline: 2px solid hsl(var(--accent-hue) 72% 66%); outline-offset: 1px;
+}
+.hub-terminal-hint { margin: 2px 0 8px; font-size: 11.5px; color: #8f89a4; }
+.hub-terminal-hint code { color: #b7aed2; }
+.hub-terminal-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.hub-tab {
+  padding: 5px 11px; border-radius: 999px; cursor: pointer; font-size: 11.5px;
+  border: 1px solid hsl(var(--accent-hue) 38% 32% / .6);
+  background: #0e0c1a99; color: #9b94b2;
+  font-family: "Cascadia Mono", ui-monospace, "Consolas", monospace;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.hub-tab.rodando { color: #cdc3e2; border-color: hsl(var(--accent-hue) 60% 52% / .75); }
+.hub-tab.active { background: hsl(var(--accent-hue) 52% 30% / .45); color: #efe9ff; }
+.hub-terminal-output { min-height: 190px; max-height: 42vh; }

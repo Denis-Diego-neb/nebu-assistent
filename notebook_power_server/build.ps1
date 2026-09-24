@@ -20,6 +20,8 @@ if ($LASTEXITCODE -ne 0) { throw "Os testes do hub doméstico falharam." }
     --hidden-import tinytuya `
     --hidden-import ar_ir_direto `
     --hidden-import versao `
+    --hidden-import front_assets `
+    --add-data "$(Join-Path $projectRoot 'nebula_front');nebula_front" `
     --hidden-import youtube_player `
     --hidden-import tkinter.scrolledtext `
     --collect-all yt_dlp `

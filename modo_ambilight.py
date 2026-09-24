@@ -73,6 +73,28 @@ def calcular_zonas_inferiores(imagem, quantidade: int = DEFAULT_KEYBOARD_ZONES):
     )
 
 
+def calcular_cor_exterior_beamng(imagem: Image.Image) -> tuple[int, int, int]:
+    """Cor do ambiente visto pelo para-brisa, sem o painel inferior."""
+    width, height = imagem.size
+    if width < 2 or height < 3:
+        raise ValueError("A captura do BeamNG e pequena demais.")
+    margem = max(0, round(width * 0.04))
+    return calcular_media_tela(imagem.crop((
+        margem,
+        0,
+        width - margem,
+        max(2, round(height * 0.64)),
+    )))
+
+
+def calcular_cor_interior_beamng(imagem: Image.Image) -> tuple[int, int, int]:
+    """Cor media do painel e da cabine na parte inferior da imagem."""
+    width, height = imagem.size
+    if width < 2 or height < 3:
+        raise ValueError("A captura do BeamNG e pequena demais.")
+    return calcular_media_tela(imagem.crop((0, 2 * height // 3, width, height)))
+
+
 def _media_quadratica(valores: list[tuple[int, int, int]]) -> tuple[int, int, int]:
     quantidade = max(1, len(valores))
     return tuple(
@@ -243,11 +265,14 @@ class ModoAmbilight:
         capture_fps: float = CAPTURE_FPS,
         lamp_fps: float = LAMP_FPS,
         keyboard_zones: int | None = None,
+        profile: str = "default",
     ) -> None:
         if not callable(saida_rgb):
             raise ValueError("O modo Ambilight precisa de uma saida RGB.")
         if capture_fps <= 0 or lamp_fps <= 0:
             raise ValueError("As taxas de captura e envio precisam ser positivas.")
+        if profile not in {"default", "beamng"}:
+            raise ValueError("Perfil de captura do Ambilight invalido.")
         if keyboard_zones is None:
             keyboard_zones = _keyboard_zone_count()
         if (
@@ -261,6 +286,7 @@ class ModoAmbilight:
         self._saida_controle = saida_controle
         self._saida_zonas = saida_zonas
         self._keyboard_zones = keyboard_zones
+        self._profile = profile
         self._zonas_suaves = None
         self._zonas_enviadas = None
         self._erro_controle = None
@@ -302,6 +328,10 @@ class ModoAmbilight:
     def erro(self) -> str | None:
         return self._erro
 
+    @property
+    def enviou_primeiro_quadro(self) -> bool:
+        return self._enviou_primeiro_quadro
+
     def definir_restauracao(self, restaurar: Callable[[], None]) -> None:
         if self.ativo:
             raise ErroModoAmbilight("A restauracao deve ser definida antes de iniciar.")
@@ -325,6 +355,16 @@ class ModoAmbilight:
         )
         self._thread_captura.start()
         self._thread_lampada.start()
+        if self._profile == "beamng":
+            # O modo fica armado antes do jogo abrir. Uma espera curta ainda
+            # permite propagar erros imediatos de captura, sem transformar a
+            # ausencia normal da janela do BeamNG em falha de inicializacao.
+            self._pronto.wait(0.25)
+            if self._erro:
+                erro = self._erro
+                self.parar()
+                raise ErroModoAmbilight(erro)
+            return
         if not self._pronto.wait(INITIAL_TIMEOUT):
             self.parar()
             if self._captura_protegida:
@@ -350,7 +390,7 @@ class ModoAmbilight:
         self._restaurar_uma_vez()
 
     def _restaurar_uma_vez(self) -> None:
-        if self._restaurado or not self._enviou_primeiro_quadro:
+        if self._restaurado:
             return
         self._restaurado = True
         if self._restaurar is not None:
@@ -391,8 +431,12 @@ class ModoAmbilight:
                 validos_consecutivos += 1
                 if validos_consecutivos < INITIAL_VALID_FRAMES:
                     continue
-                cor = calcular_media_tela(imagem)
-                secundaria = cor
+                if self._profile == "beamng":
+                    cor = calcular_cor_exterior_beamng(imagem)
+                    secundaria = calcular_cor_interior_beamng(imagem)
+                else:
+                    cor = calcular_media_tela(imagem)
+                    secundaria = cor
                 suave = suavizar_cor(self._cor_suave, cor, agora - anterior)
                 secundaria_suave = suavizar_cor(
                     self._cor_secundaria_suave, secundaria, agora - anterior
@@ -496,6 +540,7 @@ class ModoAmbilight:
     def status(self) -> dict[str, object]:
         return {
             "ativo": self.ativo,
+            "profile": self._profile,
             "janela": self._janela_encontrada,
             "captura_protegida": self._captura_protegida,
             "cor": self._cor_enviada,

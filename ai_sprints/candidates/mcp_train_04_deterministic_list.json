@@ -1,0 +1,26 @@
+{
+  "id": "mcp_train_04_deterministic_list",
+  "objective": "Exercicio MCP 04/40: Produza um catalogo de tools com ordem deterministica e schemas copiados defensivamente. Implemente o exemplo isolado em modules/mcp_training_04.py e seus testes em tests/test_mcp_training_04.py.",
+  "evidence": [
+    {
+      "path": "core/registry.py",
+      "symbols": [
+        "Tool",
+        "Registry.prepare"
+      ]
+    },
+    {
+      "path": "core/dispatcher.py",
+      "symbols": [
+        "Dispatcher.execute_plan"
+      ]
+    }
+  ],
+  "acceptance": [
+    "A implementacao usa somente a biblioteca padrao e nao importa main.py, Qwen, Gemini ou Codex.",
+    "Entradas e saidas sao objetos estruturados; nenhuma funcao interpreta frases do usuario.",
+    "Rede, hardware, relogio e espera, quando necessarios, sao dependencias injetadas.",
+    "Os testes usam unittest, nao acessam rede ou hardware e cobrem sucesso e rejeicao.",
+    "Somente modules/mcp_training_04.py e tests/test_mcp_training_04.py podem ser criados ou alterados."
+  ]
+}

@@ -21,7 +21,10 @@ public final class TurboGaugeActivity extends Activity {
         getWindow().setStatusBarColor(Color.BLACK);getWindow().setNavigationBarColor(Color.BLACK);
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,WindowManager.LayoutParams.FLAG_FULLSCREEN);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        gauge=new DevicePanelView(this);gauge.setOnClickListener(v->finish());setContentView(gauge);
+        gauge=new DevicePanelView(this);
+        gauge.setLocalMode(getIntent().getStringExtra("panel_mode"));
+        gauge.setTurboStyle(getIntent().getStringExtra("turbo_style"));
+        gauge.setOnClickListener(v->finish());setContentView(gauge);
         immersive();
     }
     private void immersive() {

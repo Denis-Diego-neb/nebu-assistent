@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 from http.server import ThreadingHTTPServer
 
-from beamng_turbo import BeamngTurbo, PACKET, decode_packet
+from beamng_turbo import BeamngTurbo, PACKET, PACKET_V2, decode_packet
 
 
 def packet(seq=1, flags=3, pressure=1.2, maximum=3, rpm=4000):
@@ -17,6 +17,12 @@ def packet(seq=1, flags=3, pressure=1.2, maximum=3, rpm=4000):
 
 
 class BeamngTurboTests(unittest.TestCase):
+    def test_version_two_delivers_afterfire_even_without_turbo(self):
+        sensor = BeamngTurbo(clock=lambda: 0)
+        sensor.ingest(PACKET_V2.pack(b'NBTG', 2, 1, 1, 0, 0, 3500, 7))
+        self.assertEqual(sensor.status()['afterfire'], 7)
+        self.assertFalse(sensor.status()['has_turbo'])
+
     def setUp(self):
         self.now = 0.0
         self.sensor = BeamngTurbo(clock=lambda:self.now)
@@ -88,6 +94,22 @@ class BeamngTurboTests(unittest.TestCase):
             self.assertEqual(len(list((root/'settings').glob('*backup*'))),1)
             with zipfile.ZipFile(target) as archive:
                 self.assertEqual(archive.namelist(),['lua/vehicle/protocols/nebulaTurbo.lua'])
+
+    def test_installer_includes_afterfire_hooks_when_game_is_supplied(self):
+        from integracoes.beamng.install import install
+        import zipfile
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / 'user'
+            (root / 'settings').mkdir(parents=True)
+            (root / 'settings/settings.json').write_text('{}')
+            game = Path(directory) / 'game'
+            source = game / 'lua/vehicle/powertrain/combustionEngineThermals.lua'
+            source.parent.mkdir(parents=True)
+            source.write_text('obj:playSFXOnceCT(afterFire.test)\n' * 3)
+            with zipfile.ZipFile(install(root, game)) as archive:
+                text = archive.read('lua/vehicle/powertrain/combustionEngineThermals.lua').decode()
+                self.assertEqual(text.count('electrics.values.nebulaAfterfire ='), 3)
+                self.assertIn('packet.version = 2', archive.read('lua/vehicle/protocols/nebulaTurbo.lua').decode())
 
 
 if __name__ == '__main__': unittest.main()

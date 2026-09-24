@@ -18,12 +18,14 @@ class SaidaFalsa:
 class ModoAmbilightFalso:
     instancias: list["ModoAmbilightFalso"] = []
 
-    def __init__(self, saida_rgb, *, saida_secundaria=None, saida_controle=None, saida_zonas=None, capturador=None) -> None:
+    def __init__(self, saida_rgb, *, saida_secundaria=None, saida_controle=None,
+                 saida_zonas=None, capturador=None, profile="default") -> None:
         self.saida_rgb = saida_rgb
         self.saida_secundaria = saida_secundaria
         self.saida_controle = saida_controle
         self.saida_zonas = saida_zonas
         self.capturador = capturador
+        self.profile = profile
         self.ativo = False
         self.erro = None
         self.restaurar = None

@@ -234,6 +234,26 @@ class ControleTuyaTest(unittest.TestCase):
 
         self.assertEqual(bulbo.eventos[-1], ("white", 42, 73))
 
+    def test_animacao_externa_reconecta_uma_vez_quando_perde_confirmacao(self) -> None:
+        with patch("abajur_tuya.tinytuya", self.tinytuya_falso):
+            controle = ControleAbajurTuya(self.config)
+            owner = object()
+            controle.preparar_animacao_externa(owner, preservar_perfil=True)
+            BulboFalso.proxima_resposta = {
+                "Error": "Network Error",
+                "Err": "905",
+            }
+            controle.enviar_rgb_animacao(20, 80, 190)
+
+        self.assertEqual(len(BulboFalso.instancias), 2)
+        self.assertIn("status", BulboFalso.instancias[1].eventos)
+        self.assertTrue(BulboFalso.instancias[1].socket_persistent)
+        self.assertTrue(any(
+            evento[0] == "hsv"
+            for evento in BulboFalso.instancias[1].eventos
+            if isinstance(evento, tuple)
+        ))
+
     def test_erro_tinytuya_e_traduzido_sem_vazar_segredo(self) -> None:
         with patch("abajur_tuya.tinytuya", self.tinytuya_falso):
             controle = ControleAbajurTuya(self.config)

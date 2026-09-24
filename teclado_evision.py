@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import threading
 import time
+from collections import Counter
+from queue import Queue
 
 from teclado_openrgb import OpenRGBKeyboardError
 
@@ -73,7 +75,7 @@ def encontrar_kumara():
 
 def pacote_evision(command, payload=b"", offset=0):
     if (
-        command not in (0x06, 0x11)
+        command not in (0x01, 0x02, 0x06, 0x11)
         or len(payload) > 54
         or not 0 <= offset <= 378
     ):
@@ -99,6 +101,67 @@ def pacote_evision(command, payload=b"", offset=0):
 
 
 _OWNER = threading.Lock()
+
+
+class _HIDWorker:
+    """Executa todo acesso HID em uma unica thread persistente."""
+
+    def __init__(self, device):
+        self._device = device
+        self._queue = Queue(maxsize=1)
+        self._ready = threading.Event()
+        self._closed = False
+        self.writer_ident = None
+        self._thread = threading.Thread(
+            target=self._run,
+            name="Nebula-Kumara-USB",
+            daemon=True,
+        )
+        self._thread.start()
+        self._ready.wait()
+
+    def _run(self):
+        self.writer_ident = threading.get_ident()
+        self._ready.set()
+        while True:
+            request = self._queue.get()
+            if request is None:
+                return
+            method, args, completed, result = request
+            try:
+                result.append((True, getattr(self._device, method)(*args)))
+            except BaseException as exc:
+                result.append((False, exc))
+            finally:
+                completed.set()
+
+    def _call(self, method, *args):
+        if self._closed:
+            raise OSError("O worker HID do Kumara foi fechado.")
+        completed = threading.Event()
+        result = []
+        self._queue.put((method, args, completed, result))
+        completed.wait()
+        ok, value = result[0]
+        if ok:
+            return value
+        raise value
+
+    def write(self, packet):
+        return self._call("write", packet)
+
+    def read(self, size, timeout):
+        return self._call("read", size, timeout)
+
+    def close(self):
+        if self._closed:
+            return
+        try:
+            self._call("close")
+        finally:
+            self._closed = True
+            self._queue.put(None)
+            self._thread.join(timeout=1.0)
 
 
 # Modos implementados diretamente pelo firmware do teclado.
@@ -150,7 +213,7 @@ EFFECT_ALIASES = {
 class TecladoKumaraUSB:
     # O firmware aplica frames Custom em blocos; a troca nao e atomica e pode
     # aparecer como uma piscada durante atualizacoes continuas.
-    ambilight_multizona_seguro = False
+    ambilight_multizona_seguro = True
 
     name = "Kumara USB"
 
@@ -158,8 +221,9 @@ class TecladoKumaraUSB:
     #
     # 12 FPS é um ponto inicial mais interessante para Ambilight,
     # principalmente agora que somente blocos modificados são enviados.
-    CUSTOM_FPS = 12
+    CUSTOM_FPS = 24
     CUSTOM_INTERVAL = 1 / CUSTOM_FPS
+    FRAME_THRESHOLD = 3
 
     BLOCK_SIZE = 54
     LED_COUNT = 126
@@ -194,6 +258,8 @@ class TecladoKumaraUSB:
 
                 self._device = hid.device()
                 self._device.open_path(info["path"])
+
+            self._device = _HIDWorker(self._device)
 
         except Exception as exc:
             if self._device is not None:
@@ -332,7 +398,62 @@ class TecladoKumaraUSB:
             f"O Kumara nao confirmou o {description}."
         )
 
-    def _frame(self, colors):
+    def _send_burst_confirmed(self, packets):
+        """Escreve o quadro inteiro primeiro e recolhe os ecos depois.
+
+        Esperar o eco de cada bloco antes do seguinte deixa um frame parcial
+        visivel por cerca de 135 ms neste Kumara. A rajada reduz essa janela
+        sem remover a validacao feita pelo firmware.
+        """
+        expected = Counter(packet for packet, _description in packets)
+        descriptions = {packet: description for packet, description in packets}
+
+        for packet, _description in packets:
+            if self._device.write(packet) != len(packet):
+                raise ErroKumaraUSB("Envio USB incompleto ao Kumara.")
+
+        deadline = time.monotonic() + 0.35
+        while expected and time.monotonic() < deadline:
+            remaining = max(1, round((deadline - time.monotonic()) * 1000))
+            response = bytes(self._device.read(64, remaining))
+            if not response:
+                break
+            if expected.get(response, 0):
+                expected[response] -= 1
+                if expected[response] == 0:
+                    del expected[response]
+
+        if expected:
+            packet = next(iter(expected))
+            raise ErroKumaraUSB(
+                f"O Kumara nao confirmou o {descriptions[packet]}."
+            )
+
+    def _send_burst_drain(self, packets):
+        """Envia o quadro em rajada e valida ao menos um eco do firmware."""
+        for packet, _description in packets:
+            if self._device.write(packet) != len(packet):
+                raise ErroKumaraUSB("Envio USB incompleto ao Kumara.")
+
+        # Este firmware preserva no maximo parte dos ecos quando recebe uma
+        # rajada. Drenar evita acumular relatorios HID entre frames.
+        response = bytes(self._device.read(64, 30))
+        if not response:
+            raise ErroKumaraUSB("O Kumara nao confirmou a rajada de LEDs.")
+        for _packet in packets[1:]:
+            if not self._device.read(64, 1):
+                break
+
+    def _frame(
+        self,
+        colors,
+        *,
+        force=False,
+        interval=None,
+        transaction=False,
+        burst=False,
+        burst_unconfirmed=False,
+    ):
         """
         Envia um quadro RGB completo.
 
@@ -364,6 +485,18 @@ class TecladoKumaraUSB:
             if (
                 self._custom_ready
                 and self._last_frame == frame
+                and not force
+            ):
+                return
+
+            if (
+                self._custom_ready
+                and self._last_frame is not None
+                and not force
+                and max(
+                    abs(current - previous)
+                    for current, previous in zip(frame, self._last_frame)
+                ) < self.FRAME_THRESHOLD
             ):
                 return
 
@@ -373,7 +506,7 @@ class TecladoKumaraUSB:
             )
 
             wait = (
-                self.CUSTOM_INTERVAL
+                (self.CUSTOM_INTERVAL if interval is None else interval)
                 - elapsed
             )
 
@@ -394,37 +527,64 @@ class TecladoKumaraUSB:
                     self._custom_ready = True
 
                 anterior = self._last_frame
+                applied = bytearray(anterior if anterior is not None else frame)
+
+                packets = []
+                if transaction:
+                    packets.append((
+                        pacote_evision(0x01),
+                        "inicio da transacao de LEDs",
+                    ))
 
                 for offset in range(
-                    0,
-                    len(frame),
-                    self.BLOCK_SIZE,
-                ):
-                    bloco = frame[
-                        offset:
-                        offset + self.BLOCK_SIZE
-                    ]
-
-                    bloco_anterior = (
-                        anterior[
+                        0,
+                        len(frame),
+                        self.BLOCK_SIZE,
+                    ):
+                        bloco = frame[
                             offset:
                             offset + self.BLOCK_SIZE
                         ]
-                        if anterior is not None
-                        else None
-                    )
 
-                    # No primeiro frame envia tudo.
-                    #
-                    # Nos seguintes envia somente blocos modificados.
-                    if (
-                        primeiro_frame
-                        or bloco != bloco_anterior
-                    ):
-                        self._send_block(
-                            bloco,
-                            offset,
+                        bloco_anterior = (
+                            anterior[
+                                offset:
+                                offset + self.BLOCK_SIZE
+                            ]
+                            if anterior is not None
+                            else None
                         )
+
+                        # No primeiro frame envia tudo.
+                        #
+                        # Nos seguintes envia somente blocos modificados.
+                        if (
+                            primeiro_frame
+                            or force
+                            or max(
+                                abs(current - previous)
+                                for current, previous in zip(bloco, bloco_anterior)
+                            ) >= self.FRAME_THRESHOLD
+                        ):
+                            packets.append((
+                                pacote_evision(0x11, bloco, offset),
+                                f"bloco de LEDs {offset // self.BLOCK_SIZE + 1}",
+                            ))
+                            applied[offset:offset + len(bloco)] = bloco
+
+                if transaction:
+                    packets.append((
+                        pacote_evision(0x02),
+                        "fim da transacao de LEDs",
+                    ))
+
+                if burst_unconfirmed:
+                    self._send_burst_drain(packets)
+                elif burst:
+                    self._send_burst_confirmed(packets)
+                else:
+                    for packet, description in packets:
+                        self._send_confirmed(packet, description)
 
             except (OSError, ErroKumaraUSB) as exc:
                 self._custom_ready = False
@@ -437,7 +597,7 @@ class TecladoKumaraUSB:
 
                 raise
 
-            self._last_frame = frame
+            self._last_frame = bytes(applied)
             self._last_send = time.monotonic()
 
     def enviar_rgb(
@@ -645,7 +805,7 @@ class TecladoKumaraUSB:
             for i in range(self.LED_COUNT)
         ]
 
-        self._frame(frame)
+        self._frame(frame, burst_unconfirmed=True)
 
     def definir_cor_base(
         self,
@@ -682,7 +842,7 @@ class TecladoKumaraUSB:
             for i in range(self.LED_COUNT)
         ]
 
-        self._frame(frame)
+        self._frame(frame, burst_unconfirmed=True)
 
     def restaurar(self):
         """

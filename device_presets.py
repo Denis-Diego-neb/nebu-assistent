@@ -43,12 +43,14 @@ MODES = {
         "torch",
         "rpm",
         "boost",
+        "beamng",
     ),
 
     "keyboard": (
         "manual",
         "ambilight",
         "boost",
+        "beamng",
 
         # Modos executados diretamente pelo firmware do Kumara.
         *KEYBOARD_EFFECTS,
@@ -81,6 +83,7 @@ LABELS = {
     "torch": "Tocha",
     "rpm": "RPM / FuelTech",
     "boost": "Boost",
+    "beamng": "BeamNG: exterior / cabine",
     "turbo": "Pressão do turbo",
 
     # Kumara / EVision

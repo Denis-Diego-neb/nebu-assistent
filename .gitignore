@@ -272,3 +272,17 @@ ai_sprints/*.rar
 ai_sprints/*state.json
 ai_sprints/queue/*.json
 !ai_sprints/queue/README.md
+ai_sprints/gemini_queue/
+ai_sprints/gemini_results/
+ai_sprints/scoreboard.json
+ai_sprints/.scoreboard.lock
+ai_sprints/codex_app_server.log
+
+# Arquivos de distribuicao compactados: pesados e regeneraveis.
+*.rar
+*.zip
+
+# Saida de build do PyInstaller para o hub (inclui relatorios enormes de xref).
+notebook_power_server/mcp_build/work/
+notebook_power_server/dist_build/
+notebook_power_server/work_build/

@@ -12,6 +12,8 @@ from modo_ambilight import (
     suavizar_cor,
     calcular_media_tela,
     calcular_zonas_inferiores,
+    calcular_cor_exterior_beamng,
+    calcular_cor_interior_beamng,
 )
 
 
@@ -25,7 +27,61 @@ class CapturadorFalso:
         return self.imagem.copy()
 
 
+class CapturadorSemJanela:
+    def capturar(self):
+        return None
+
+
 class ModoAmbilightTests(unittest.TestCase):
+    def test_beamng_fica_armado_esperando_janela_sem_abrir_o_jogo(self):
+        limpezas = []
+        mode = ModoAmbilight(
+            lambda *_color: None,
+            capturador=CapturadorSemJanela(),
+            profile="beamng",
+        )
+        mode.definir_restauracao(lambda: limpezas.append(True))
+        started = time.monotonic()
+        try:
+            mode.iniciar()
+            self.assertTrue(mode.ativo)
+            self.assertFalse(mode.status()["janela"])
+            self.assertLess(time.monotonic() - started, 1.0)
+        finally:
+            mode.parar()
+        self.assertEqual(limpezas, [True])
+
+    def test_beamng_separa_exterior_superior_e_cabine_inferior(self):
+        image = Image.new("RGB", (300, 300), (20, 80, 220))
+        image.paste((180, 45, 20), (0, 200, 300, 300))
+        exterior = calcular_cor_exterior_beamng(image)
+        interior = calcular_cor_interior_beamng(image)
+        self.assertGreater(exterior[2], exterior[0])
+        self.assertGreater(interior[0], interior[2])
+
+    def test_perfil_beamng_envia_exterior_ao_abajur_e_interior_ao_teclado(self):
+        lamp, keyboard = [], []
+        capture = CapturadorFalso()
+        capture.imagem = Image.new("RGB", (300, 300), (20, 80, 220))
+        capture.imagem.paste((180, 45, 20), (0, 200, 300, 300))
+        mode = ModoAmbilight(
+            lambda *color: lamp.append(color),
+            saida_secundaria=lambda *color: keyboard.append(color),
+            capturador=capture,
+            profile="beamng",
+        )
+        try:
+            mode.iniciar()
+            deadline = time.monotonic() + 1.0
+            while (not lamp or not keyboard) and time.monotonic() < deadline:
+                time.sleep(0.01)
+        finally:
+            mode.parar()
+        self.assertTrue(lamp)
+        self.assertTrue(keyboard)
+        self.assertGreater(lamp[0][2], lamp[0][0])
+        self.assertGreater(keyboard[0][0], keyboard[0][2])
+
     def test_grade_inferior_usa_doze_faixas_por_padrao(self):
         image = Image.new("RGB", (300, 300), "white")
         for i, color in enumerate(((255,0,0), (0,255,0), (0,0,255))):

@@ -23,7 +23,7 @@ class IndependentModesTests(unittest.TestCase):
         self.patchlamp.start(); self.addCleanup(self.patchlamp.stop)
         self.engines = {}
         for mode in ("rpm", "ambilight", "boost"):
-            def start(m=mode):
+            def start(*_args, m=mode, **_kwargs):
                 engine = Mock(ativo=True, erro=None)
                 engine.status.return_value = {"rpm": 3210, "recebendo": True, "telemetria_valida": True}
                 setattr(self.nebula, "_modo_"+m, engine)
@@ -55,6 +55,15 @@ class IndependentModesTests(unittest.TestCase):
         with self.assertRaises(ValueError):self.select("keyboard", "music")
         keyboard.parar.assert_not_called()
         self.assertEqual(self.nebula._devices["keyboard"]["mode"], "ambilight")
+
+    def test_beamng_em_um_seletor_ativa_e_desativa_o_par_completo(self):
+        state = self.select("keyboard", "beamng")["state"]
+        self.assertEqual(state["devices"]["keyboard"]["mode"], "beamng")
+        self.assertEqual(state["devices"]["lamp"]["mode"], "beamng")
+        self.assertTrue(state["devices"]["lamp"]["power"])
+        state = self.select("lamp", "manual")["state"]
+        self.assertEqual(state["devices"]["keyboard"]["mode"], "manual")
+        self.assertEqual(state["devices"]["lamp"]["mode"], "manual")
 
     def test_preset_roundtrip_and_voice_apply_restore_colors_modes_and_flash(self):
         self.select("keyboard", "ambilight")
@@ -122,9 +131,43 @@ class ExhaustTelemetryTests(unittest.TestCase):
             flash.set_rgb(0,0,255)
             time.sleep(.3)
             output.set_rgb.assert_called_with(0,0,255)
-            self.assertIn(((255,220,170),),[(c.args,) for c in output.set_rgb.call_args_list])
+            colors = [call.args for call in output.set_rgb.call_args_list]
+            self.assertTrue(any(color not in {(0,255,0), (0,0,255)} for color in colors))
+            self.assertTrue(any(color[0] > 100 and color[1] > color[2] for color in colors))
         finally:flash.close()
         output.close.assert_called_once()
+
+    def test_flash_beamng_mistura_amarelo_sem_sair_do_custom_multizona(self):
+        from exhaust_flash import ExhaustFlash
+        sensor=Mock();sensor.status.return_value={"afterfire":None}
+        output=Mock(spec=["enviar_zonas","close"])
+        flash=ExhaustFlash(output,keyboard=True,sensor=sensor)
+        try:
+            base=((0,30,120),(120,20,0))
+            flash.enviar_zonas(base)
+            flash._render_flash(.5)
+            rendered=output.enviar_zonas.call_args.args[0]
+            self.assertEqual(len(rendered),2)
+            self.assertGreater(rendered[0][0],base[0][0])
+            self.assertGreater(rendered[0][1],base[0][1])
+            self.assertNotEqual(rendered,base)
+        finally:flash.close()
+
+    def test_flash_do_abajur_restaura_a_cor_externa_mais_recente(self):
+        from exhaust_flash import ExhaustFlash
+        sensor=Mock();sensor.status.return_value={"afterfire":None}
+        output=Mock(spec=["enviar_rgb_animacao","rgb","close"])
+        flash=ExhaustFlash(output,lamp=True,close_device=False,sensor=sensor)
+        try:
+            flash.enviar_rgb_animacao(10,40,100)
+            flash._render_flash(.5)
+            mixed=output.enviar_rgb_animacao.call_args.args
+            self.assertGreater(mixed[0],10)
+            self.assertGreater(mixed[1],40)
+            self.assertLess(mixed[2],100)
+            self.assertEqual(flash._base[1],(10,40,100))
+        finally:flash.close()
+        output.close.assert_not_called()
 
 
 if __name__ == "__main__":unittest.main()

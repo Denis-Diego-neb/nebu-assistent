@@ -1,0 +1,26 @@
+/* UI accents cycle blue → violet → pink → red; the world mixes local pigments. */
+#nebula-volume{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;background:#000}
+:root{--accent-hue:215;--accent:hsl(var(--accent-hue) 70% 78%);--accent-soft:hsl(var(--accent-hue) 55% 62% / .12);--accent-line:hsl(var(--accent-hue) 65% 72% / .24)}
+.brand-symbol,.eyebrow,.tiny-star,.voice-button,.terminal-prompt,.cursor,.text-button,.empty-panel>span{color:var(--accent)}
+.sidebar button.active{color:var(--accent);background:var(--accent-soft);box-shadow:none}
+.composer{background:#0c0c10da;border-color:var(--accent-line);box-shadow:0 0 35px hsl(var(--accent-hue) 60% 45% / .04)}
+.composer:focus-within{border-color:hsl(var(--accent-hue) 65% 72% / .5)}
+.send-button,.send-button:hover{background:var(--accent);color:#101015}
+#orbit-toggle,#orbit-menu button{color:var(--accent);border-color:var(--accent-line);background:#0c0c12e8;box-shadow:0 0 25px var(--accent-soft)}
+#orbit-toggle[aria-expanded=true]{background:#15151e}
+.folder,.folder.blue,.folder.silver{filter:none;background:linear-gradient(145deg,hsl(var(--accent-hue) 28% 30% / .7),#101016d0);border-color:var(--accent-line)}
+.folder:before{background:hsl(var(--accent-hue) 24% 29%);border-color:var(--accent-line)}
+.folder i{color:var(--accent);opacity:.5}
+.workspace-tabs button[aria-selected=true]{color:var(--accent);background:var(--accent-soft)}
+.message.user{background:hsl(var(--accent-hue) 18% 15% / .85)}
+#gyro[aria-pressed=true]{color:var(--accent);border-color:var(--accent-line)}
+#audio-orb{color:var(--accent);border-color:var(--accent-line);background:radial-gradient(circle,#08080c 45%,hsl(var(--accent-hue) 50% 50% / .12) 75%,hsl(var(--accent-hue) 65% 75% / .4));box-shadow:0 0 35px var(--accent-soft),inset 0 0 35px var(--accent-soft)}
+@keyframes breathe{50%{box-shadow:0 0 60px var(--accent-soft),inset 0 0 45px var(--accent-soft);transform:scale(1.035)}}
+@keyframes arrive{from{opacity:0;translate:-14px 0}to{opacity:1;translate:0 0}}
+.vignette{background:linear-gradient(0deg,#000 0%,transparent 26%,transparent 78%,#0007)}
+button:focus-visible,a:focus-visible{outline-color:var(--accent)}
+
+/* Tela cheia (F11) — mesmo acabamento dos demais controles do cabeçalho. */
+[data-fullscreen]{font-size:16px;line-height:1}
+[data-fullscreen][aria-pressed=true]{color:var(--accent);border-color:var(--accent-line)}
+body.is-fullscreen .prototype{display:none}

@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "Nebula Gemini Bridge",
+  "version": "0.3.0",
+  "description": "Ponte entre a Nebula local e o Gemini Web.",
+  "permissions": [
+    "storage",
+    "tabs",
+    "scripting",
+    "alarms",
+    "clipboardWrite"
+  ],
+  "host_permissions": [
+    "https://gemini.google.com/*",
+    "http://127.0.0.1:8767/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://gemini.google.com/*"
+      ],
+      "js": [
+        "content_gemini.js"
+      ]
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Nebula Gemini Bridge"
+  },
+  "minimum_chrome_version": "120"
+}

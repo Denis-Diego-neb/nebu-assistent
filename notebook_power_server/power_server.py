@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hmac
 import hashlib
 import json
@@ -10,6 +11,7 @@ from pathlib import Path
 import queue
 import re
 import secrets
+import shutil
 import socket
 import subprocess
 import sys
@@ -20,7 +22,7 @@ from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 try:
     from versao import VERSAO_NEBULA
@@ -36,6 +38,17 @@ except ImportError:
         VERSAO_NEBULA = achou_versao.group(1) if achou_versao else "desconhecida"
     except OSError:
         VERSAO_NEBULA = "desconhecida"
+
+try:
+    import front_assets
+except ImportError:
+    # Executado de dentro de notebook_power_server/: a pasta do repositório
+    # ainda não está no sys.path.
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    try:
+        import front_assets
+    except ImportError:
+        front_assets = None  # type: ignore[assignment]
 
 try:
     from .tv_control import TvError, TvManager
@@ -64,6 +77,15 @@ except ImportError:
 
 PORT = 8766
 _POWER_TOKEN_CONFIGURADO = os.environ.get("NEBULA_POWER_TOKEN", "").strip()
+if not _POWER_TOKEN_CONFIGURADO and os.name == "nt":
+    # Atualizacoes iniciadas por processos antigos podem herdar um ambiente
+    # anterior a configuracao do token do usuario.
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as key:
+            _POWER_TOKEN_CONFIGURADO = str(winreg.QueryValueEx(key, "NEBULA_POWER_TOKEN")[0]).strip()
+    except OSError:
+        pass
 POWER_TOKEN = _POWER_TOKEN_CONFIGURADO or secrets.token_urlsafe(32)
 TARGET_MAC = os.environ.get("NEBULA_PC_MAC", "00:E0:23:7C:7B:4D")
 BROADCAST = os.environ.get("NEBULA_BROADCAST", "192.168.15.255")
@@ -90,6 +112,39 @@ NOTEBOOK_ASSISTANT = Path(os.environ.get(
     "NEBULA_NOTEBOOK_ASSISTANT",
     str(Path(sys.executable).resolve().parent / "NebulaNotebook.exe"),
 ))
+MCP_SSH_DESTINATION = os.environ.get(
+    "NEBULA_MCP_SSH_DESTINATION", "Nebullar@192.168.15.12"
+).strip()
+MCP_REMOTE_PROJECT = os.environ.get(
+    "NEBULA_MCP_REMOTE_PROJECT", r"C:\Users\Nebullar\Documents\assistente virtual"
+).strip()
+
+
+def launch_mcp_ssh_terminal() -> None:
+    """Abre um console visivel no servidor MCP do PC atraves do OpenSSH."""
+    ssh = shutil.which("ssh.exe")
+    if not ssh:
+        raise RuntimeError("O cliente OpenSSH nao esta instalado no notebook.")
+    if not MCP_SSH_DESTINATION or not MCP_REMOTE_PROJECT:
+        raise RuntimeError("Configure o destino SSH e a pasta remota do MCP.")
+    escaped_project = MCP_REMOTE_PROJECT.replace("'", "''")
+    remote_python = str(Path(MCP_REMOTE_PROJECT) / ".venv" / "Scripts" / "python.exe")
+    escaped_python = remote_python.replace("'", "''")
+    remote_script = (
+        f"Set-Location -LiteralPath '{escaped_project}'; "
+        f"& '{escaped_python}' -m scripts.mcp_console"
+    )
+    encoded = base64.b64encode(remote_script.encode("utf-16-le")).decode("ascii")
+    ssh_command = [
+        ssh, "-t", MCP_SSH_DESTINATION,
+        "powershell.exe", "-NoLogo", "-NoProfile", "-EncodedCommand", encoded,
+    ]
+    terminal = shutil.which("wt.exe")
+    if terminal:
+        command = [terminal, "new-tab", "--title", "Nebula MCP", *ssh_command]
+    else:
+        command = ["cmd.exe", "/k", *ssh_command]
+    subprocess.Popen(command, close_fds=True)
 
 
 class ServerMonitor:
@@ -101,17 +156,90 @@ class ServerMonitor:
         self.lock = threading.RLock()
         self.events: queue.Queue[str] = queue.Queue()
         self.recent: deque[str] = deque(maxlen=500)
+        # Numera cada linha para o console web saber o que ainda não recebeu.
+        self.sequence = 0
         self.total_requests = 0
         self.successful_requests = 0
         self.denied_requests = 0
         self.failed_requests = 0
         self.clients: dict[str, float] = {}
         self.last_client = "—"
+        self.sprints: dict = {}
+        self.sprints_received = 0.0
+        self.sprint_command: str | None = None
+        self.mcp_event_ids: deque[str] = deque(maxlen=200)
+
+    def receive_sprints(self, data: dict) -> dict:
+        if not isinstance(data.get("counts"), dict) or not isinstance(data.get("recent"), list):
+            raise ValueError("Resumo das sprints invalido.")
+        if len(data["recent"]) > 3 or not all(type(v) is int and v >= 0 for v in data["counts"].values()):
+            raise ValueError("Contagens de sprints invalidas.")
+        for item in data["recent"]:
+            if not isinstance(item, dict) or not isinstance(item.get("rewards"), dict):
+                raise ValueError("Notas de sprint invalidas.")
+            for reward in item["rewards"].values():
+                if not isinstance(reward, dict) or type(reward.get("delta")) is not int or not -10 <= reward["delta"] <= 10:
+                    raise ValueError("Nota de sprint invalida.")
+        mcp_events = data.get("mcp_events", [])
+        if not isinstance(mcp_events, list) or len(mcp_events) > 8:
+            raise ValueError("Eventos MCP invalidos.")
+        for event in mcp_events:
+            if not isinstance(event, dict):
+                raise ValueError("Evento MCP invalido.")
+            if not isinstance(event.get("id"), str) or not 1 <= len(event["id"]) <= 64:
+                raise ValueError("Identificador MCP invalido.")
+            if not isinstance(event.get("tool"), str) or not 1 <= len(event["tool"]) <= 128:
+                raise ValueError("Nome de tool MCP invalido.")
+            if type(event.get("ok")) is not bool:
+                raise ValueError("Resultado MCP invalido.")
+            if type(event.get("duration_ms")) is not int or not 0 <= event["duration_ms"] <= 3_600_000:
+                raise ValueError("Duracao MCP invalida.")
+            if not isinstance(event.get("message", ""), str) or len(event.get("message", "")) > 300:
+                raise ValueError("Mensagem MCP invalida.")
+        new_mcp_events = []
+        with self.lock:
+            changed = data.get("evaluated") != self.sprints.get("evaluated")
+            self.sprints = data
+            self.sprints_received = time.time()
+            command = self.sprint_command
+            # Repete ate o PC confirmar o estado no proximo heartbeat.
+            if command and data.get("paused") == (command == "pause"):
+                self.sprint_command = None
+                command = None
+            for event in mcp_events:
+                if event["id"] not in self.mcp_event_ids:
+                    self.mcp_event_ids.append(event["id"])
+                    new_mcp_events.append(event)
+        if changed:
+            self.record_event(f"SPRINTS: {data.get('evaluated', 0)} avaliadas / {data.get('total', 0)}; "
+                              + "; ".join(str(x)[:200] for x in data.get("alerts", [])[:2]))
+        for event in new_mcp_events:
+            status = "OK" if event["ok"] else "ERRO"
+            message = " ".join(event.get("message", "").split())[:180]
+            suffix = f" - {message}" if message else ""
+            self.record_event(
+                f"MCP {status}: {event['tool']} ({event['duration_ms']} ms){suffix}"
+            )
+        return {"ok": True, "command": command}
+
+    def sprint_snapshot(self) -> dict:
+        with self.lock:
+            return {"data": self.sprints.copy(), "age_seconds":
+                    int(time.time() - self.sprints_received) if self.sprints_received else None,
+                    "pending_command": self.sprint_command}
+
+    def command_sprints(self, command: str) -> None:
+        if command not in {"pause", "resume"}:
+            raise ValueError("Comando de sprint invalido.")
+        with self.lock:
+            self.sprint_command = command
+        self.record_event("SPRINTS: solicitado " + command + "; aguardando PC.")
 
     def _publish(self, message: str) -> None:
         line = f"{time.strftime('%Y-%m-%d %H:%M:%S')}  {message}"
         with self.lock:
             self.recent.append(line)
+            self.sequence += 1
         self.events.put(line)
         try:
             self.log_file.parent.mkdir(parents=True, exist_ok=True)
@@ -139,6 +267,21 @@ class ServerMonitor:
             self.clients[client] = time.time()
             self.last_client = client
         self._publish(f"{client:<15} {method:<6} {path:<22} → {status}")
+
+    def history_since(self, after: int) -> dict[str, object]:
+        """Linhas publicadas depois de ``after``, com o novo cursor.
+
+        ``reset`` avisa que o pedido ficou para trás do buffer e o console
+        precisa recomeçar a visualização em vez de emendar linhas soltas.
+        """
+        with self.lock:
+            fim = self.sequence
+            inicio = fim - len(self.recent)
+            if after >= fim:
+                return {"cursor": fim, "lines": [], "reset": False}
+            reset = after < inicio
+            comeco = 0 if reset else after - inicio
+            return {"cursor": fim, "lines": list(self.recent)[comeco:], "reset": reset}
 
     def snapshot(self) -> dict[str, object]:
         with self.lock:
@@ -548,6 +691,167 @@ def wake_nebula() -> dict[str, object]:
 UNIVERSAL = UniversalController(BRAIN, TVS, wake_nebula)
 
 
+class Terminais:
+    """Sessões de comando do hub: sprints e tarefas longas que rodam a fio.
+
+    A saída fica num buffer circular com cursor, igual ao log do monitor, para
+    o console e as duas IAs acompanharem por polling sem perder linha e sem
+    precisarem falar entre si. É execução de comando de verdade: só passa pelo
+    ``hub_autorizado`` — de fora da máquina, exige o token.
+    """
+
+    MAXIMO_VIVOS = 6
+    LINHAS_POR_SESSAO = 4000
+    MAXIMO_SESSOES = 24
+
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.sessoes: dict[str, dict[str, object]] = {}
+
+    def _raiz(self, cwd: object) -> Path:
+        if not cwd:
+            return Path(sys.executable).resolve().parent
+        caminho = Path(str(cwd)).expanduser()
+        if not caminho.is_dir():
+            raise ValueError(f"Pasta inexistente: {caminho}")
+        return caminho
+
+    def abrir(self, comando: object, cwd: object = None, autor: object = "usuario") -> dict[str, object]:
+        texto = str(comando or "").strip()
+        if not texto:
+            raise ValueError("Informe um comando.")
+        if len(texto) > 4000:
+            raise ValueError("Comando longo demais.")
+        raiz = self._raiz(cwd)
+        with self.lock:
+            vivos = sum(1 for s in self.sessoes.values() if s["proc"].poll() is None)
+            if vivos >= self.MAXIMO_VIVOS:
+                raise ValueError(
+                    f"Já há {self.MAXIMO_VIVOS} comandos em execução. Encerre um antes."
+                )
+        try:
+            proc = subprocess.Popen(
+                texto, shell=True, cwd=str(raiz),
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                # Sem stdin: um comando que pedir confirmação termina em vez de
+                # travar a sessão para sempre esperando alguém digitar.
+                stdin=subprocess.DEVNULL,
+                text=True, encoding="utf-8", errors="replace", bufsize=1,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except OSError as exc:
+            raise ValueError(f"Não consegui iniciar: {exc}") from exc
+        ident = uuid.uuid4().hex[:12]
+        sessao = {
+            "id": ident, "comando": texto, "cwd": str(raiz),
+            "autor": str(autor or "usuario")[:40], "proc": proc,
+            "linhas": deque(maxlen=self.LINHAS_POR_SESSAO), "sequencia": 0,
+            "inicio": time.time(), "fim": None, "codigo": None,
+        }
+        with self.lock:
+            self.sessoes[ident] = sessao
+            if len(self.sessoes) > self.MAXIMO_SESSOES:
+                mortas = [i for i, s in self.sessoes.items()
+                          if s["fim"] is not None and i != ident]
+                for antiga in sorted(mortas, key=lambda i: self.sessoes[i]["fim"])[
+                        : len(self.sessoes) - self.MAXIMO_SESSOES]:
+                    self.sessoes.pop(antiga, None)
+        threading.Thread(target=self._drenar, args=(sessao,),
+                         name=f"terminal-{ident}", daemon=True).start()
+        MONITOR.record_event(f"Terminal {ident}: {texto[:90]} ({sessao['autor']}).")
+        return self.resumo(ident)
+
+    def _escrever(self, sessao: dict[str, object], linha: str) -> None:
+        with self.lock:
+            sessao["linhas"].append(linha)
+            sessao["sequencia"] = int(sessao["sequencia"]) + 1
+
+    def _drenar(self, sessao: dict[str, object]) -> None:
+        proc = sessao["proc"]
+        try:
+            for linha in proc.stdout:
+                self._escrever(sessao, linha.rstrip("\n")[:4000])
+        except (OSError, ValueError):
+            pass
+        finally:
+            try:
+                proc.stdout.close()
+            except OSError:
+                pass
+            codigo = proc.wait()
+            with self.lock:
+                sessao["fim"] = time.time()
+                sessao["codigo"] = codigo
+            self._escrever(sessao, f"[hub] encerrado com código {codigo}")
+            MONITOR.record_event(f"Terminal {sessao['id']}: código {codigo}.")
+
+    def resumo(self, ident: str) -> dict[str, object]:
+        with self.lock:
+            sessao = self.sessoes.get(ident)
+            if sessao is None:
+                raise ValueError("Sessão desconhecida.")
+            return {
+                "id": sessao["id"], "comando": sessao["comando"], "cwd": sessao["cwd"],
+                "autor": sessao["autor"], "cursor": sessao["sequencia"],
+                "executando": sessao["proc"].poll() is None,
+                "codigo": sessao["codigo"],
+                "inicio": sessao["inicio"], "fim": sessao["fim"],
+                "segundos": round((sessao["fim"] or time.time()) - sessao["inicio"], 1),
+            }
+
+    def listar(self) -> list[dict[str, object]]:
+        with self.lock:
+            ids = list(self.sessoes)
+        sessoes = []
+        for ident in ids:
+            try:
+                sessoes.append(self.resumo(ident))
+            except ValueError:
+                continue
+        return sorted(sessoes, key=lambda s: s["inicio"], reverse=True)
+
+    def historico(self, ident: str, after: int) -> dict[str, object]:
+        """Linhas depois de ``after``; ``reset`` avisa que o cursor ficou para trás."""
+        resumo = self.resumo(ident)
+        with self.lock:
+            sessao = self.sessoes[ident]
+            fim = int(sessao["sequencia"])
+            linhas = list(sessao["linhas"])
+        inicio = fim - len(linhas)
+        if after >= fim:
+            resumo.update(cursor=fim, lines=[], reset=False)
+            return resumo
+        reset = after < inicio
+        resumo.update(cursor=fim, reset=reset,
+                      lines=linhas[0 if reset else after - inicio:])
+        return resumo
+
+    def encerrar(self, ident: str) -> dict[str, object]:
+        with self.lock:
+            sessao = self.sessoes.get(ident)
+            if sessao is None:
+                raise ValueError("Sessão desconhecida.")
+            proc = sessao["proc"]
+        if proc.poll() is None:
+            # taskkill /T derruba a árvore: shell=True cria um cmd.exe
+            # intermediário e matar só ele deixaria o processo real órfão.
+            if os.name == "nt":
+                subprocess.run(["taskkill.exe", "/PID", str(proc.pid), "/T", "/F"],
+                               check=False, capture_output=True,
+                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            else:
+                proc.terminate()
+            try:
+                proc.wait(timeout=6)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+            self._escrever(sessao, "[hub] encerrado a pedido.")
+        return self.resumo(ident)
+
+
+TERMINAIS = Terminais()
+
+
 class Handler(BaseHTTPRequestHandler):
     def authorized(self) -> bool:
         supplied = self.headers.get("X-Nebula-Power-Token", "")
@@ -583,8 +887,91 @@ class Handler(BaseHTTPRequestHandler):
             raise TvError("O corpo da requisição precisa ser um objeto JSON.")
         return data
 
+    def hub_autorizado(self) -> bool:
+        """O console é local por padrão; de fora da máquina exige o token."""
+        if self.client_address[0] in ("127.0.0.1", "::1", "::ffff:127.0.0.1"):
+            return True
+        return self.authorized()
+
+    def enviar(self, status: int, corpo: bytes, tipo: str) -> None:
+        """Resposta crua do console, fora da contagem de requisições do hub.
+
+        O console consulta o log a cada poucos segundos; registrar essas
+        chamadas encheria justamente o log que ele mostra.
+        """
+        self.send_response(status)
+        self.send_header("Content-Type", tipo)
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Content-Length", str(len(corpo)))
+        self.end_headers()
+        self.wfile.write(corpo)
+
+    def enviar_json(self, status: int, payload: dict[str, object]) -> None:
+        self.enviar(status, json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                    "application/json; charset=utf-8")
+
+    def servir_hub(self, path: str) -> None:
+        if not self.hub_autorizado():
+            self.enviar_json(401, {"error": "Não autorizado"})
+            return
+        if path == "/hub":
+            self.send_response(303)
+            self.send_header("Location", "/hub/")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        nome = path[len("/hub/"):]
+        if path == "/hub/state":
+            metricas = MONITOR.snapshot()
+            self.enviar_json(200, {
+                "metrics": metricas,
+                "uptime": _format_uptime(int(metricas["uptime_seconds"])),
+                "sprints": MONITOR.sprint_snapshot(),
+                "port": self.server.server_port,
+                "version": VERSAO_NEBULA,
+                "log_file": str(MONITOR_LOG_FILE),
+            })
+            return
+        if path == "/hub/events":
+            try:
+                after = int(parse_qs(urlparse(self.path).query).get("after", ["0"])[0] or 0)
+            except ValueError:
+                after = 0
+            self.enviar_json(200, MONITOR.history_since(max(0, after)))
+            return
+        if path == "/hub/terminal":
+            self.enviar_json(200, {"sessions": TERMINAIS.listar()})
+            return
+        if path.startswith("/hub/terminal/"):
+            ident = path[len("/hub/terminal/"):].strip("/")
+            try:
+                depois = int(parse_qs(urlparse(self.path).query).get("after", ["0"])[0] or 0)
+            except ValueError:
+                depois = 0
+            try:
+                self.enviar_json(200, TERMINAIS.historico(ident, max(0, depois)))
+            except ValueError as exc:
+                self.enviar_json(404, {"error": str(exc)})
+            return
+        if front_assets is None:
+            self.enviar(503, b"Front do hub indisponivel.", "text/plain; charset=utf-8")
+            return
+        recurso = front_assets.carregar(nome or "hub.html")
+        if recurso is None:
+            if nome:
+                self.enviar(404, b"Nao encontrado", "text/plain; charset=utf-8")
+            else:
+                self.enviar(200, front_assets.INDISPONIVEL.encode(), "text/html; charset=utf-8")
+            return
+        corpo, tipo = recurso
+        self.enviar(200, corpo, tipo)
+
     def do_GET(self) -> None:
         path = urlparse(self.path).path
+        if path == "/hub" or path.startswith("/hub/"):
+            self.servir_hub(path)
+            return
         if not self.authorized():
             self.respond(401, {"error": "Não autorizado"})
         elif path == "/health":
@@ -592,10 +979,12 @@ class Handler(BaseHTTPRequestHandler):
                 "ok": True,
                 "service": "Nebula Home Hub",
                 "version": VERSAO_NEBULA,
-                "features": ["wake_on_lan", "smart_tvs", "tv_groups", "youtube_multiroom", "central_brain", "lamp", "air_ir_local", "pc_agent", "pc_launch_command", "auto_update", "notebook_fallback", "assistant_update", "universal_control", "home_assistant"],
+                "features": ["wake_on_lan", "smart_tvs", "tv_groups", "youtube_multiroom", "central_brain", "lamp", "air_ir_local", "pc_agent", "pc_launch_command", "auto_update", "notebook_fallback", "assistant_update", "universal_control", "home_assistant", "sprint_monitor", "mcp_audit"],
             })
         elif path == "/pc/command":
             self.respond(200, {"command": BRAIN.current_pc_command()})
+        elif path == "/sprints":
+            self.respond(200, MONITOR.sprint_snapshot())
         elif path == "/control":
             self.respond(200, {"state": BRAIN.status()})
         elif path == "/tvs":
@@ -610,6 +999,30 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
+        if path == "/hub/terminal" or path.startswith("/hub/terminal/"):
+            if not self.hub_autorizado():
+                self.enviar_json(401, {"error": "Não autorizado"}); return
+            try:
+                if path == "/hub/terminal":
+                    corpo = self.body()
+                    aberta = TERMINAIS.abrir(corpo.get("command"), corpo.get("cwd"),
+                                             corpo.get("author", "usuario"))
+                    self.enviar_json(201, aberta); return
+                ident = path[len("/hub/terminal/"):].strip("/")
+                if ident.endswith("/stop"):
+                    self.enviar_json(200, TERMINAIS.encerrar(ident[:-len("/stop")]))
+                    return
+                self.enviar_json(404, {"error": "Rota desconhecida."}); return
+            except (TvError, ValueError) as exc:
+                self.enviar_json(400, {"error": str(exc)}); return
+        if path == "/hub/command":
+            if not self.hub_autorizado():
+                self.enviar_json(401, {"error": "Não autorizado"}); return
+            try:
+                MONITOR.command_sprints(str(self.body().get("command", "")))
+            except (TvError, ValueError) as exc:
+                self.enviar_json(400, {"error": str(exc)}); return
+            self.enviar_json(200, {"ok": True}); return
         if not self.authorized():
             self.respond(401, {"error": "Não autorizado"})
             return
@@ -621,7 +1034,9 @@ class Handler(BaseHTTPRequestHandler):
                 self.respond(200, preparar_assistente_notebook(self))
                 return
             data = self.body()
-            if path == "/wake":
+            if path == "/sprints":
+                self.respond(200, MONITOR.receive_sprints(data))
+            elif path == "/wake":
                 wake()
                 command = BRAIN.queue_pc_launch(data.get("unlock_proof"))
                 BRAIN.schedule_notebook_fallback(str(command["id"]))
@@ -670,114 +1085,319 @@ def _format_uptime(seconds: int) -> str:
     return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
 
+HUB_FUNDO = "#07060c"
+HUB_VIDRO = "#100e19"
+HUB_BORDA = "#242131"
+HUB_TEXTO = "#ece8f6"
+HUB_SUAVE = "#827c91"
+HUB_FRACO = "#5f5a6d"
+HUB_LOG = "#0a0812"
+
+
+def _acento_hub(segundos: float) -> str:
+    """Mesmo passeio de cor do front: azul, violeta, rosa e de volta."""
+    import colorsys
+    import math
+
+    matiz = 215 + 145 * (0.5 - 0.5 * math.cos(segundos * math.pi / 90))
+    vermelho, verde, azul = colorsys.hls_to_rgb((matiz % 360) / 360, 0.74, 0.62)
+    return f"#{int(vermelho * 255):02x}{int(verde * 255):02x}{int(azul * 255):02x}"
+
+
+def _classificar_linha(linha: str) -> str:
+    """Mesma leitura do console web: sucesso, bloqueio, falha ou aviso."""
+    achou = re.search(r"→\s*(\d{3})\s*$", linha)
+    if not achou:
+        return "nota"
+    status = int(achou.group(1))
+    if status in (401, 403):
+        return "bloqueada"
+    if status >= 400:
+        return "falha"
+    return "ok"
+
+
+NAVEGADORES = (
+    r"Google\Chrome\Application\chrome.exe",
+    r"Microsoft\Edge\Application\msedge.exe",
+    r"BraveSoftware\Brave-Browser\Application\brave.exe",
+)
+
+
+def _encontrar_navegador() -> str:
+    for nome in ("chrome.exe", "msedge.exe", "brave.exe", "chromium.exe"):
+        achado = shutil.which(nome)
+        if achado:
+            return achado
+    bases = [os.environ.get(v, "") for v in
+             ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA")]
+    for base in filter(None, bases):
+        for sufixo in NAVEGADORES:
+            caminho = Path(base) / sufixo
+            if caminho.is_file():
+                return str(caminho)
+    return ""
+
+
+def abrir_modo_estrelas(server: ThreadingHTTPServer) -> bool:
+    """Console espacial em janela própria: é o único modo do hub.
+
+    A janela Tk antiga continua no código como reserva para quando não houver
+    navegador ou área de trabalho — sem ela o hub ficaria sem rosto nenhum.
+    """
+    endereco = f"http://127.0.0.1:{server.server_port}/hub/"
+    navegador = _encontrar_navegador()
+    if not navegador:
+        return False
+    perfil = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "NebulaPower" / "console"
+    try:
+        perfil.mkdir(parents=True, exist_ok=True)
+        subprocess.Popen(
+            [navegador, f"--app={endereco}", f"--user-data-dir={perfil}",
+             "--start-fullscreen", "--no-first-run", "--no-default-browser-check"],
+            close_fds=True,
+        )
+    except OSError:
+        return False
+    MONITOR.record_event(f"Modo estrelas aberto em {endereco}.")
+    return True
+
+
 def run_monitor_window(server: ThreadingHTTPServer) -> None:
+    """Janela nativa do hub, na mesma temática espacial do front da Nebula.
+
+    O conteúdo é desenhado sobre um céu estrelado em ``tk.Canvas``; só o log e
+    os botões são widgets reais, posicionados sobre o céu. F11 alterna a tela
+    cheia e há um atalho para o console web, que tem a nebulosa em WebGL.
+    """
+    import random
     import tkinter as tk
+    import webbrowser
     from tkinter.scrolledtext import ScrolledText
 
     root = tk.Tk()
     root.title(f"Nebula Home Hub {VERSAO_NEBULA} — Monitor")
-    root.geometry("920x590")
-    root.minsize(720, 450)
-    root.configure(bg="#080d16")
+    root.geometry("1060x820")
+    root.minsize(760, 520)
+    root.configure(bg=HUB_FUNDO)
 
-    title = tk.Frame(root, bg="#080d16")
-    title.pack(fill="x", padx=24, pady=(20, 8))
-    tk.Label(
-        title, text="NEBULA HOME HUB", bg="#080d16", fg="#f5f9ff",
-        font=("Segoe UI", 20, "bold"),
-    ).pack(side="left")
-    tk.Label(
-        title, text="● SERVIDOR ATIVO", bg="#080d16", fg="#44dc8c",
-        font=("Segoe UI", 11, "bold"),
-    ).pack(side="right")
-    tk.Label(
-        root,
-        text=f"Porta {server.server_port}  •  versão {VERSAO_NEBULA}  •  log: {MONITOR_LOG_FILE}",
-        bg="#080d16", fg="#8290a6", font=("Segoe UI", 10), anchor="w",
-    ).pack(fill="x", padx=24, pady=(0, 16))
+    ceu = tk.Canvas(root, bg=HUB_FUNDO, highlightthickness=0, bd=0)
+    ceu.pack(fill="both", expand=True)
 
-    cards = tk.Frame(root, bg="#080d16")
-    cards.pack(fill="x", padx=18, pady=(0, 12))
-    metric_vars: dict[str, tk.StringVar] = {}
-    for key, label in (
-        ("total", "REQUISIÇÕES"),
-        ("active_clients", "CLIENTES 5 MIN"),
-        ("denied", "BLOQUEADAS"),
-        ("uptime", "TEMPO ATIVO"),
-    ):
-        card = tk.Frame(cards, bg="#101a2a", padx=16, pady=12)
-        card.pack(side="left", fill="x", expand=True, padx=6)
-        variable = tk.StringVar(value="0")
-        metric_vars[key] = variable
-        tk.Label(
-            card, textvariable=variable, bg="#101a2a", fg="#79c6ff",
-            font=("Segoe UI", 18, "bold"),
-        ).pack(anchor="w")
-        tk.Label(
-            card, text=label, bg="#101a2a", fg="#8290a6",
-            font=("Segoe UI", 9, "bold"),
-        ).pack(anchor="w")
+    sorteio = random.Random(73421)
+    estrelas = [
+        (sorteio.random(), sorteio.random(), sorteio.choice((0.6, 0.8, 1.0, 1.4)),
+         sorteio.choice(("#2c2a3a", "#3b3950", "#565270", "#7f7b99", "#b9b4cf")))
+        for _ in range(230)
+    ]
 
-    connection_var = tk.StringVar(value="Última conexão: —")
-    tk.Label(
-        root, textvariable=connection_var, bg="#080d16", fg="#b8c5d8",
-        font=("Segoe UI", 10), anchor="w",
-    ).pack(fill="x", padx=24, pady=(0, 8))
+    def arredondado(x1: float, y1: float, x2: float, y2: float, raio: int = 16, **opcoes) -> int:
+        pontos = [
+            x1 + raio, y1, x2 - raio, y1, x2, y1, x2, y1 + raio,
+            x2, y2 - raio, x2, y2, x2 - raio, y2, x1 + raio, y2,
+            x1, y2, x1, y2 - raio, x1, y1 + raio, x1, y1,
+        ]
+        return ceu.create_polygon(pontos, smooth=True, **opcoes)
 
-    log_view = ScrolledText(
-        root, bg="#050911", fg="#cfdaea", insertbackground="#cfdaea",
-        selectbackground="#174d79", relief="flat", borderwidth=0,
-        font=("Cascadia Mono", 10), padx=14, pady=12, wrap="none",
+    metricas = ("total", "active_clients", "denied", "uptime")
+    rotulos = {"total": "REQUISIÇÕES", "active_clients": "CLIENTES 5 MIN",
+               "denied": "BLOQUEADAS", "uptime": "TEMPO ATIVO"}
+    itens: dict[str, int] = {}
+
+    log = ScrolledText(
+        ceu, bg=HUB_LOG, fg="#9f99ae", insertbackground="#9f99ae",
+        selectbackground="#2c2545", relief="flat", borderwidth=0,
+        font=("Cascadia Mono", 10), padx=16, pady=14, wrap="none",
     )
-    log_view.pack(fill="both", expand=True, padx=24, pady=(0, 12))
-    log_view.configure(state="normal")
+    log.tag_configure("ok", foreground="#a9a2bb")
+    log.tag_configure("bloqueada", foreground="#e0b3b3")
+    log.tag_configure("falha", foreground="#ffb9a3")
+    log.tag_configure("nota", foreground="#cdc3e2")
+
+    def escrever(linhas: list[str]) -> None:
+        log.configure(state="normal")
+        for linha in linhas:
+            log.insert("end", linha + "\n", _classificar_linha(linha))
+        log.see("end")
+        log.configure(state="disabled")
+
     with MONITOR.lock:
-        initial_lines = list(MONITOR.recent)
-    if initial_lines:
-        log_view.insert("end", "\n".join(initial_lines) + "\n")
-    log_view.configure(state="disabled")
+        iniciais = list(MONITOR.recent)
+    escrever(iniciais)
 
-    footer = tk.Frame(root, bg="#080d16")
-    footer.pack(fill="x", padx=24, pady=(0, 18))
-    tk.Label(
-        footer,
-        text="Fechar minimiza a janela; o servidor continua funcionando.",
-        bg="#080d16", fg="#6f7c90", font=("Segoe UI", 9),
-    ).pack(side="left")
+    def limpar() -> None:
+        log.configure(state="normal")
+        log.delete("1.0", "end")
+        log.configure(state="disabled")
 
-    def clear_view() -> None:
-        log_view.configure(state="normal")
-        log_view.delete("1.0", "end")
-        log_view.configure(state="disabled")
+    def abrir_console() -> None:
+        webbrowser.open(f"http://127.0.0.1:{server.server_port}/hub/")
 
-    tk.Button(
-        footer, text="Limpar visualização", command=clear_view,
-        bg="#15263c", fg="#d9eaff", activebackground="#1d3858",
-        activeforeground="#ffffff", relief="flat", padx=14, pady=7,
-        font=("Segoe UI", 9, "bold"),
-    ).pack(side="right")
+    def alternar_tela_cheia(_evento: object = None) -> str:
+        cheia = not bool(root.attributes("-fullscreen"))
+        root.attributes("-fullscreen", cheia)
+        botao_tela.configure(text="Sair da tela cheia (F11)" if cheia else "Tela cheia (F11)")
+        return "break"
+
+    def sair_tela_cheia(_evento: object = None) -> None:
+        if root.attributes("-fullscreen"):
+            alternar_tela_cheia()
+
+    def botao(texto: str, comando) -> tk.Button:
+        return tk.Button(
+            ceu, text=texto, command=comando, bg=HUB_VIDRO, fg="#bcb7ca",
+            activebackground="#1b1828", activeforeground=HUB_TEXTO,
+            relief="flat", borderwidth=0, padx=15, pady=8,
+            font=("Segoe UI", 9), cursor="hand2",
+        )
+
+    botao_pausar = botao("Pausar após a tarefa atual", lambda: MONITOR.command_sprints("pause"))
+    botao_retomar = botao("Retomar sprints", lambda: MONITOR.command_sprints("resume"))
+    botao_limpar = botao("Limpar visualização", limpar)
+    botao_console = botao("Abrir console no navegador", abrir_console)
+    botao_tela = botao("Tela cheia (F11)", alternar_tela_cheia)
+    rodape = (botao_pausar, botao_retomar, botao_limpar, botao_console, botao_tela)
+
+    root.bind("<F11>", alternar_tela_cheia)
+    root.bind("<Escape>", sair_tela_cheia)
+
+    estado_visual = {"acento": "#9eabff", "sprints": "Aguardando resumo do PC…", "alerta": False}
+
+    def desenhar(_evento: object = None) -> None:
+        largura = max(ceu.winfo_width(), 1)
+        altura = max(ceu.winfo_height(), 1)
+        acento = estado_visual["acento"]
+        ceu.delete("all")
+        itens.clear()
+
+        for fx, fy, raio, cor in estrelas:
+            x, y = fx * largura, fy * altura
+            ceu.create_oval(x - raio, y - raio, x + raio, y + raio, fill=cor, outline="")
+
+        margem = 34
+        ceu.create_text(margem, 40, anchor="w", text="✧", fill=acento, font=("Segoe UI", 21))
+        ceu.create_text(margem + 30, 42, anchor="w", text="N E B U L A   H O M E   H U B",
+                        fill=HUB_TEXTO, font=("Segoe UI Semibold", 15))
+        ceu.create_text(largura - margem, 42, anchor="e", text="● SERVIDOR ATIVO",
+                        fill=acento, font=("Segoe UI Semibold", 9))
+        ceu.create_text(
+            margem, 74, anchor="w",
+            text=f"NOTEBOOK · PORTA {server.server_port} · VERSÃO {VERSAO_NEBULA} · LOG {MONITOR_LOG_FILE}",
+            fill=HUB_FRACO, font=("Segoe UI", 8),
+        )
+
+        topo, alto = 100, 78
+        vao = (largura - margem * 2 - 12 * 3) / 4
+        for indice, chave in enumerate(metricas):
+            x1 = margem + indice * (vao + 12)
+            arredondado(x1, topo, x1 + vao, topo + alto, fill=HUB_VIDRO, outline=HUB_BORDA)
+            itens[chave] = ceu.create_text(
+                x1 + 18, topo + 30, anchor="w", text="—", fill=acento,
+                font=("Segoe UI Light", 22),
+            )
+            ceu.create_text(x1 + 18, topo + 58, anchor="w", text=rotulos[chave],
+                            fill=HUB_FRACO, font=("Segoe UI Semibold", 7))
+
+        itens["conexao"] = ceu.create_text(
+            margem, topo + alto + 22, anchor="w", text="Última conexão: —",
+            fill=HUB_SUAVE, font=("Segoe UI", 9),
+        )
+
+        sprint_topo = topo + alto + 40
+        sprint_alto = 112
+        arredondado(margem, sprint_topo, largura - margem, sprint_topo + sprint_alto,
+                    fill=HUB_VIDRO, outline=HUB_BORDA)
+        ceu.create_text(margem + 18, sprint_topo + 20, anchor="w",
+                        text="SPRINTS · AVALIAÇÕES GEMINI", fill=acento,
+                        font=("Segoe UI Semibold", 8))
+        itens["sprints"] = ceu.create_text(
+            margem + 18, sprint_topo + 38, anchor="nw", text=estado_visual["sprints"],
+            fill="#ffc891" if estado_visual["alerta"] else "#bdb5cb",
+            font=("Segoe UI", 9), width=max(200, largura - margem * 2 - 36),
+        )
+
+        altura_rodape = 52
+        log_topo = sprint_topo + sprint_alto + 16
+        log_base = altura - altura_rodape - 16
+        if log_base - log_topo > 80:
+            arredondado(margem, log_topo, largura - margem, log_base,
+                        fill=HUB_LOG, outline=HUB_BORDA)
+            ceu.create_window(
+                margem + 4, log_topo + 4, anchor="nw", window=log,
+                width=largura - margem * 2 - 8, height=log_base - log_topo - 8,
+            )
+
+        x = margem
+        for widget in rodape:
+            ceu.create_window(x, altura - altura_rodape + 14, anchor="nw", window=widget)
+            x += widget.winfo_reqwidth() + 8
+        ceu.create_text(
+            largura - margem, altura - 16, anchor="e",
+            text="Fechar minimiza a janela; o servidor continua funcionando.",
+            fill=HUB_FRACO, font=("Segoe UI", 8),
+        )
+
+    ceu.bind("<Configure>", desenhar)
 
     def refresh() -> None:
-        new_lines: list[str] = []
+        novas: list[str] = []
         while True:
             try:
-                new_lines.append(MONITOR.events.get_nowait())
+                novas.append(MONITOR.events.get_nowait())
             except queue.Empty:
                 break
-        if new_lines:
-            log_view.configure(state="normal")
-            log_view.insert("end", "\n".join(new_lines) + "\n")
-            log_view.see("end")
-            log_view.configure(state="disabled")
-        state = MONITOR.snapshot()
-        metric_vars["total"].set(str(state["total"]))
-        metric_vars["active_clients"].set(str(state["active_clients"]))
-        metric_vars["denied"].set(str(state["denied"]))
-        metric_vars["uptime"].set(_format_uptime(int(state["uptime_seconds"])))
-        connection_var.set(
-            f"Última conexão: {state['last_client']}  •  "
-            f"sucesso: {state['successful']}  •  erros: {state['failed']}"
-        )
+        if novas:
+            escrever(novas)
+
+        estado = MONITOR.snapshot()
+        sprint = MONITOR.sprint_snapshot()
+        resumo = sprint["data"]
+        if resumo:
+            contagens = resumo.get("counts", {})
+            linhas = [
+                f"{'PAUSADA' if resumo.get('paused') else 'ATIVA'} · "
+                f"{resumo.get('evaluated', 0)}/{resumo.get('total', 0)} avaliadas · "
+                f"{contagens.get('waiting_gemini', 0)} aguardando Gemini · "
+                f"CPU até {resumo.get('threads', '?')} threads / intervalo {resumo.get('interval_seconds', '?')}s"
+            ]
+            idade = sprint["age_seconds"]
+            if idade and idade > 60:
+                linhas.append(f"SEM ATUALIZAÇÃO DO PC há {idade}s")
+            if sprint["pending_command"]:
+                linhas.append("Comando pendente: " + str(sprint["pending_command"]))
+            linhas.extend(str(x) for x in resumo.get("alerts", [])[:2])
+            for item in resumo.get("recent", [])[:2]:
+                notas = " | ".join(
+                    f"{nome}: {premio.get('delta', 0):+d}"
+                    for nome, premio in item.get("rewards", {}).items()
+                )
+                linhas.append(f"{item.get('job')}: {notas}\n{str(item.get('summary', ''))[:260]}")
+            estado_visual["sprints"] = "\n".join(linhas)
+            estado_visual["alerta"] = bool(resumo.get("alerts")) or bool(idade and idade > 60)
+
+        acento = _acento_hub(estado["uptime_seconds"])
+        if acento != estado_visual["acento"] or not itens:
+            estado_visual["acento"] = acento
+            desenhar()
+        valores = {
+            "total": str(estado["total"]),
+            "active_clients": str(estado["active_clients"]),
+            "denied": str(estado["denied"]),
+            "uptime": _format_uptime(int(estado["uptime_seconds"])),
+        }
+        for chave, valor in valores.items():
+            if chave in itens:
+                ceu.itemconfigure(itens[chave], text=valor)
+        if "conexao" in itens:
+            ceu.itemconfigure(itens["conexao"], text=(
+                f"Última conexão: {estado['last_client']}  ·  "
+                f"sucesso: {estado['successful']}  ·  erros: {estado['failed']}"
+            ))
+        if "sprints" in itens:
+            ceu.itemconfigure(
+                itens["sprints"], text=estado_visual["sprints"],
+                fill="#ffc891" if estado_visual["alerta"] else "#bdb5cb",
+            )
         root.after(250, refresh)
 
     root.protocol("WM_DELETE_WINDOW", root.iconify)
@@ -803,8 +1423,17 @@ if __name__ == "__main__":
     http_server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     BRAIN.air_timer.start()
     MONITOR.record_event(f"Servidor iniciado em 0.0.0.0:{PORT}.")
-    try:
-        run_monitor_window(http_server)
-    except Exception as exc:
-        MONITOR.record_event(f"Monitor visual indisponível: {exc}. Servidor em modo silencioso.")
-        http_server.serve_forever()
+    # O modo estrelas é o único acesso do hub. A janela Tk só entra se não
+    # houver navegador, e NEBULA_HUB_JANELA=1 força ela de volta.
+    forcar_janela = os.environ.get("NEBULA_HUB_JANELA", "").strip() == "1"
+    if not forcar_janela and abrir_modo_estrelas(http_server):
+        try:
+            http_server.serve_forever()
+        finally:
+            http_server.server_close()
+    else:
+        try:
+            run_monitor_window(http_server)
+        except Exception as exc:
+            MONITOR.record_event(f"Monitor visual indisponível: {exc}. Servidor em modo silencioso.")
+            http_server.serve_forever()

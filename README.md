@@ -436,6 +436,45 @@ vozes > Adicionar vozes**, escolha **Português (Brasil)** e instale.
 Feche e abra novamente a Nebula após a instalação. Ela prioriza automaticamente
 as vozes brasileiras Maria ou Henrique quando uma delas está disponível.
 
+## Espaço 1.28
+
+O **Espaço** é a nova cara da Nebula: uma nebulosa volumétrica em WebGL por trás
+de sete seções — Conversa, Casa, Projetos, Memória, Áudio, Telefone e Terminal.
+Não é uma tela de demonstração: cada seção usa as mesmas APIs que a janela do PC
+e o painel do celular já usavam, então o que funciona no painel funciona nele.
+
+O front fica em `nebula_front/`, em uma cópia só, servida em três lugares:
+
+- **No PC**, pelo botão **✧ Espaço** na barra lateral da janela da Nebula (ou
+  pelo ícone na bandeja). Abre em janela própria do Chrome, Edge ou Brave,
+  apontando para `http://127.0.0.1:8765/espaco/`. A Nebula emite um bilhete de
+  uso único, válido por 90 segundos e aceito só no loopback, para a janela já
+  nascer autenticada. Sem nenhum Chromium instalado, abre no navegador padrão.
+- **No celular**, pelo cartão **Espaço** da tela inicial do aplicativo. O APK
+  troca a credencial do aparelho por uma sessão curta e carrega `/espaco/` no
+  WebView. Se o PC ainda estiver em uma versão anterior, o painel clássico
+  responde no lugar.
+- **No notebook**, o Home Hub ganhou o mesmo tratamento (veja abaixo).
+
+**F11 alterna a tela cheia** no Espaço, na janela principal da Nebula, no
+console do hub e na janela nativa do hub. No celular, o F11 de um teclado
+Bluetooth também funciona, e o botão ⤢ no cabeçalho faz o mesmo.
+
+Nada no Espaço depende de internet: as fontes são as do sistema e não há CDN.
+
+## Nebula Home Hub 1.28
+
+O monitor do hub no notebook passou a seguir a mesma temática. A janela nativa
+desenha o conteúdo sobre um céu estrelado, colore cada linha do log conforme o
+resultado da requisição (sucesso, bloqueada, falha ou aviso) e acompanha o mesmo
+passeio de cor do acento do front. **F11** deixa a janela em tela cheia.
+
+O botão **Abrir console no navegador** abre `http://127.0.0.1:8766/hub/`: a mesma
+nebulosa em WebGL, com as métricas do servidor, o painel de sprints e o log ao
+vivo. O console é liberado no loopback e, de fora da máquina, exige o
+`X-Nebula-Power-Token`. As consultas do console não entram na contagem de
+requisições do hub — do contrário encheriam justamente o log que ele mostra.
+
 ## Painel de controle 1.18
 
 A Nebula agora abre em um painel minimalista escuro, tanto no Windows quanto no

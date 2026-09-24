@@ -1,0 +1,26 @@
+{
+  "id": "mcp_train_08_no_natural_language",
+  "objective": "Exercicio MCP 08/40: Demonstre por teste que o dispatcher rejeita texto livre e nunca interpreta linguagem natural. Implemente o exemplo isolado em modules/mcp_training_08.py e seus testes em tests/test_mcp_training_08.py.",
+  "evidence": [
+    {
+      "path": "core/registry.py",
+      "symbols": [
+        "Tool",
+        "Registry.prepare"
+      ]
+    },
+    {
+      "path": "core/dispatcher.py",
+      "symbols": [
+        "Dispatcher.execute_plan"
+      ]
+    }
+  ],
+  "acceptance": [
+    "A implementacao usa somente a biblioteca padrao e nao importa main.py, Qwen, Gemini ou Codex.",
+    "Entradas e saidas sao objetos estruturados; nenhuma funcao interpreta frases do usuario.",
+    "Rede, hardware, relogio e espera, quando necessarios, sao dependencias injetadas.",
+    "Os testes usam unittest, nao acessam rede ou hardware e cobrem sucesso e rejeicao.",
+    "Somente modules/mcp_training_08.py e tests/test_mcp_training_08.py podem ser criados ou alterados."
+  ]
+}

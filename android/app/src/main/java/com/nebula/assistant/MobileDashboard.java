@@ -32,11 +32,12 @@ import java.util.concurrent.Executors;
 final class MobileDashboard {
     final LinearLayout root;
     final Button powerButton;
+    final Button espacoButton;
     final TextView status;
     private final Activity activity;
     private final String token;
     private final String[] hubs, pcs;
-    private final Runnable wake;
+    private final Runnable wake, espaco;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final ExecutorService network = Executors.newSingleThreadExecutor();
     private final LinearLayout content, navigation;
@@ -60,9 +61,10 @@ final class MobileDashboard {
     private interface Work { JSONObject run() throws Exception; }
     private interface Result { void show(JSONObject data); }
 
-    MobileDashboard(Activity activity, String token, String[] hubs, String[] pcs, Runnable wake) {
+    MobileDashboard(Activity activity, String token, String[] hubs, String[] pcs,
+                    Runnable wake, Runnable espaco) {
         this.activity = activity; this.token = token; this.hubs = hubs; this.pcs = pcs;
-        this.wake = wake;
+        this.wake = wake; this.espaco = espaco;
         root = column();
         GradientDrawable backdrop = new GradientDrawable(
             GradientDrawable.Orientation.TL_BR,
@@ -112,7 +114,10 @@ final class MobileDashboard {
             "TVs, iluminação e ar-condicionado.", primaryButton("Abrir", () -> select(1)));
         LinearLayout tools = homeCard("ARENA + EXPERIMENTOS", "Ferramentas",
             "Boost, nick e BPM sobre o jogo.", primaryButton("Abrir", () -> select(2)));
-        for (LinearLayout item : new LinearLayout[]{pc, shortcuts, tools}) {
+        espacoButton = primaryButton("Abrir", espaco);
+        LinearLayout space = homeCard("ESPAÇO", "Painel completo",
+            "Conversa, casa, projetos, mídia e terminal do PC.", espacoButton);
+        for (LinearLayout item : new LinearLayout[]{pc, shortcuts, tools, space}) {
             LinearLayout.LayoutParams itemParams = landscape
                 ? new LinearLayout.LayoutParams(0, -1, 1)
                 : new LinearLayout.LayoutParams(-1, -2);
@@ -612,8 +617,8 @@ final class MobileDashboard {
     private void independentModes() {
         String[] devices={"lamp","keyboard","controller","mobile"};
         String[] names={"Abajur","Kumara","Controle PS4 · USB","Telefone"};
-        String[][] modes={{"manual","ambilight","music","torch","rpm","boost"},
-            {"manual","ambilight","boost"},{"manual","ambilight","rpm","boost"},{"manual","rpm","turbo"}};
+        String[][] modes={{"manual","ambilight","beamng","music","torch","rpm","boost"},
+            {"manual","ambilight","beamng","boost"},{"manual","ambilight","rpm","boost"},{"manual","rpm","turbo"}};
         android.widget.Spinner[] selectors=new android.widget.Spinner[4];
         Button[] flashes=new Button[4];
         TextView[] errors=new TextView[4];
@@ -748,6 +753,7 @@ final class MobileDashboard {
             case "music":return "Música";
             case "torch":return "Tocha";
             case "boost":return "Boost";
+            case "beamng":return "BeamNG: exterior / cabine";
             default:return "Ambilight";
         }
     }
@@ -849,7 +855,10 @@ final class MobileDashboard {
         content.addView(devicePanel,new LinearLayout.LayoutParams(-1,dp(330)));
         content.addView(button("Tela cheia",()->{
             android.content.Intent intent=new android.content.Intent(activity,TurboGaugeActivity.class);
-            intent.putExtra("endpoints",pcs);intent.putExtra("token",token);activity.startActivity(intent);
+            intent.putExtra("endpoints",pcs);intent.putExtra("token",token);
+            intent.putExtra("panel_mode",activity.getPreferences(Activity.MODE_PRIVATE).getString("instrument_panel","auto"));
+            intent.putExtra("turbo_style",activity.getSharedPreferences("nebula",Activity.MODE_PRIVATE).getString("boost_style","cyber"));
+            activity.startActivity(intent);
         }));
         devicePanel.setTurboStyle(savedStyle);devicePanel.setLocalMode(savedPanel);devicePanel.start(pcs,token);
     }

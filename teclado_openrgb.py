@@ -188,6 +188,9 @@ class TecladoKumaraOpenRGB:
             "evision keyboard" in str(keyboard.name).casefold()
             and self._static_mode_name is not None
         )
+        # O servidor OpenRGB nao torna atomicas as escritas do firmware EVision.
+        # Use o mesmo fallback uniforme ja adotado pelo transporte USB.
+        self.ambilight_multizona_seguro = not self._use_static_mode
         if not self._use_static_mode:
             try:
                 keyboard.set_mode("Custom", force=True)

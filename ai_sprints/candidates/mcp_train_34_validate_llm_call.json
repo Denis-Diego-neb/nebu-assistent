@@ -1,0 +1,25 @@
+{
+  "id": "mcp_train_34_validate_llm_call",
+  "objective": "Exercicio MCP 34/40: Valide nome e argumentos de uma tool call produzida por modelo antes do roteamento. Implemente o exemplo isolado em modules/mcp_training_34.py e seus testes em tests/test_mcp_training_34.py.",
+  "evidence": [
+    {
+      "path": "core/bootstrap.py",
+      "symbols": [
+        "criar_dispatcher"
+      ]
+    },
+    {
+      "path": "core/dispatcher.py",
+      "symbols": [
+        "Dispatcher.execute_plan"
+      ]
+    }
+  ],
+  "acceptance": [
+    "A implementacao usa somente a biblioteca padrao e nao importa main.py, Qwen, Gemini ou Codex.",
+    "Entradas e saidas sao objetos estruturados; nenhuma funcao interpreta frases do usuario.",
+    "Rede, hardware, relogio e espera, quando necessarios, sao dependencias injetadas.",
+    "Os testes usam unittest, nao acessam rede ou hardware e cobrem sucesso e rejeicao.",
+    "Somente modules/mcp_training_34.py e tests/test_mcp_training_34.py podem ser criados ou alterados."
+  ]
+}

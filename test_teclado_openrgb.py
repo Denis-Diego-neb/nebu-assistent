@@ -1,9 +1,32 @@
 import unittest
+from unittest.mock import Mock, patch
+from types import SimpleNamespace
 
 from teclado_openrgb import _leds_acesos_barra, zonas_por_coluna, OpenRGBKeyboardError
+from teclado_openrgb import TecladoKumaraOpenRGB
 
 
 class BarraBoostKumaraTests(unittest.TestCase):
+    def test_evision_uses_uniform_ambilight_instead_of_nonatomic_frames(self):
+        from modules.iot.ambilight import selecionar_saidas_teclado
+        keyboard = Mock(name="keyboard")
+        keyboard.name = "EVision Keyboard"
+        keyboard.colors = [(0, 0, 0)]
+        keyboard.active_mode = 0
+        keyboard.modes = [SimpleNamespace(name="Static")]
+        keyboard.zones = []
+        client = Mock(devices=[keyboard])
+        with patch("teclado_openrgb.iniciar_servidor_openrgb"), patch.dict("sys.modules", {
+            "openrgb": SimpleNamespace(OpenRGBClient=lambda **_: client),
+            "openrgb.utils": SimpleNamespace(RGBColor=lambda *rgb: rgb),
+        }):
+            device = TecladoKumaraOpenRGB()
+            output = selecionar_saidas_teclado(device)
+            self.assertFalse(output.multizona)
+            self.assertEqual(output.secundaria, device.enviar_rgb)
+            keyboard.set_mode.assert_not_called()
+            device.close()
+
     def test_zonas_seguem_coluna_fisica_e_ignoram_led_sem_tecla(self):
         matrix = [[4, 3, 2, 1, 0, 5], [6, None, 7, 8, 9, 10]]
         mapping = zonas_por_coluna(12, matrix)

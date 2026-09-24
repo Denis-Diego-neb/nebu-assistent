@@ -431,7 +431,12 @@ class ControleAbajurTuya:
         matiz, saturacao, valor = colorsys.rgb_to_hsv(
             *(canal / 255.0 for canal in canais)
         )
-        self._enviar_hsv_ritmo(matiz, saturacao, valor)
+        try:
+            self._enviar_hsv_ritmo(matiz, saturacao, valor)
+        except Exception as primeira_falha:
+            self._registrar_falha_ritmo("quadro externo perdido", primeira_falha)
+            self._reconectar_animacao()
+            self._enviar_hsv_ritmo(matiz, saturacao, valor)
 
     def restaurar_perfil_animacao(self, percentual: int) -> None:
         """Restaura o modo white/colour congelado antes da animação externa."""

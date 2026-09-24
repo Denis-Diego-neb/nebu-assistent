@@ -51,9 +51,11 @@ from main import (
     normalizar_texto,
 )
 from remote_server import (
-    add_conversation_message, get_conversation, get_dark_mode, get_device_status,
-    get_latest_job, get_pin, queue_device_command, set_dark_mode, start_server, POWER_TOKEN,
+    CONFIG_DIR, add_conversation_message, get_conversation, get_dark_mode,
+    get_device_status, get_latest_job, get_pin, queue_device_command, set_dark_mode,
+    start_server, url_espaco, POWER_TOKEN,
 )
+import front_window
 from transfer_chat import CHAT_STORE, MAX_FILE_BYTES
 from versao import VERSAO_NEBULA
 
@@ -361,6 +363,30 @@ def iniciar_servidor_do_notebook() -> None:
         pass
 
 
+PREFERENCIAS = CONFIG_DIR / "interface.json"
+
+
+def preferencia_espaco_inicial() -> bool:
+    """O Espaço é o modo padrão; o HUD antigo fica sob demanda na bandeja."""
+    try:
+        dados = json.loads(PREFERENCIAS.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return True
+    return bool(dados.get("espaco_ao_iniciar", True)) if isinstance(dados, dict) else True
+
+
+def salvar_preferencia_espaco_inicial(ativo: bool) -> None:
+    try:
+        PREFERENCIAS.parent.mkdir(parents=True, exist_ok=True)
+        PREFERENCIAS.write_text(
+            json.dumps({"espaco_ao_iniciar": bool(ativo)}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    except OSError:
+        # Preferência é conveniência: sem ela a Nebula continua abrindo o Espaço.
+        pass
+
+
 def caminho_recurso(*partes: str) -> str:
     """Localiza recursos no código-fonte e dentro do executável empacotado."""
     base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
@@ -437,12 +463,19 @@ class InterfaceNebula:
         self._aplicar_tema(self.modo_escuro)
         self.mostrar_aba("controle")
 
+        # F11 também aqui, para a janela principal acompanhar o Espaço e o hub.
+        self.janela.bind("<F11>", self._alternar_tela_cheia)
+        self.janela.bind("<Escape>", self._sair_tela_cheia)
+
         self.janela.protocol("WM_DELETE_WINDOW", self.ocultar_na_bandeja)
         self.janela.after(40, self._processar_eventos)
         self.janela.after(40, self._animar_esfera)
 
         self.icone_bandeja = self._criar_icone_bandeja()
         self.icone_bandeja.run_detached()
+
+        # Depois da bandeja: se o Espaço abrir, é ele que fica na frente.
+        self.janela.after(700, self._entrar_no_espaco)
 
         threading.Thread(target=self._executar_assistente, daemon=True).start()
 
@@ -478,6 +511,20 @@ class InterfaceNebula:
             )
             botao.pack(fill="x", pady=2)
             self.botoes_abas[chave] = botao
+
+        tk.Frame(navegacao, bg="#3a3b3e", height=1).pack(fill="x", padx=14, pady=(10, 8))
+        # O Espaço abre em janela própria: o front é WebGL e não cabe no Tkinter.
+        self.botao_espaco = BotaoArredondado(
+            navegacao, text="✧   Espaço", command=self.abrir_espaco,
+            bg="#292a2d", fg="#b8b0a5", activebackground="#514a40",
+            activeforeground="#f4eee4", anchor="w", height=44, radius=8,
+            font=("Segoe UI", 10), cursor="hand2",
+        )
+        self.botao_espaco.pack(fill="x", pady=2)
+        tk.Label(
+            navegacao, text="Tela cheia com F11", bg="#292a2d", fg="#77736d",
+            font=("Segoe UI", 7), anchor="w",
+        ).pack(fill="x", padx=14, pady=(0, 4))
 
         rodape = tk.Frame(self.sidebar, bg="#292a2d")
         rodape.pack(side="bottom", fill="x", padx=12, pady=16)
@@ -1867,6 +1914,64 @@ class InterfaceNebula:
             parent=self.janela,
         )
 
+    def _alternar_tela_cheia(self, _evento: object = None) -> str:
+        cheia = not bool(self.janela.attributes("-fullscreen"))
+        self.janela.attributes("-fullscreen", cheia)
+        return "break"
+
+    def _sair_tela_cheia(self, _evento: object = None) -> None:
+        if self.janela.attributes("-fullscreen"):
+            self._alternar_tela_cheia()
+
+    def abrir_espaco(self, tela_cheia: bool = False, silencioso: bool = False) -> str | None:
+        """Abre o front espacial em janela própria, já autenticado no loopback.
+
+        Devolve ``"app"``, ``"navegador"`` ou ``None`` se não abriu, para quem
+        chama no arranque poder decidir se esconde o HUD antigo.
+        """
+        try:
+            porta = getattr(self.servidor_remoto, "server_port", None)
+            endereco = url_espaco(porta=porta) if porta else url_espaco()
+            modo = front_window.abrir(endereco, tela_cheia=tela_cheia)
+        except Exception as erro:
+            if not silencioso:
+                messagebox.showerror(
+                    "Espaço", f"Não consegui abrir o Espaço: {erro}", parent=self.janela
+                )
+            return None
+        if modo == "navegador" and not silencioso:
+            self.janela.after(0, lambda: messagebox.showinfo(
+                "Espaço",
+                "Abri o Espaço no navegador padrão porque não encontrei Chrome, Edge "
+                "ou Brave instalados. Use F11 para tela cheia.",
+                parent=self.janela,
+            ))
+        return modo
+
+    def _entrar_no_espaco(self) -> None:
+        """Arranque: o Espaço é o modo; o HUD antigo espera na bandeja.
+
+        Só esconde a janela depois de o Espaço realmente abrir. Se o navegador
+        não subir, o usuário continua com a interface completa na frente em vez
+        de ficar sem nada visível.
+        """
+        if not preferencia_espaco_inicial():
+            return
+        if self.abrir_espaco(silencioso=True) is None:
+            return
+        self.janela.withdraw()
+        try:
+            self.icone_bandeja.notify(
+                "O HUD antigo está aqui na bandeja, em 'Abrir Nebula'.",
+                "Espaço aberto",
+            )
+        except Exception:
+            pass
+
+    def _alternar_espaco_inicial(self) -> None:
+        salvar_preferencia_espaco_inicial(not preferencia_espaco_inicial())
+        self.icone_bandeja.update_menu()
+
     def mostrar_aba(self, nome: str) -> None:
         for frame in (
             self.aba_controle, self.aba_casa, self.aba_transferencia,
@@ -2635,6 +2740,15 @@ class InterfaceNebula:
                 "Abrir Nebula",
                 lambda _icone, _item: self.janela.after(0, self.mostrar_janela),
                 default=True,
+            ),
+            pystray.MenuItem(
+                "Abrir o Espaço",
+                lambda _icone, _item: self.janela.after(0, self.abrir_espaco),
+            ),
+            pystray.MenuItem(
+                "Abrir o Espaço ao iniciar",
+                lambda _icone, _item: self.janela.after(0, self._alternar_espaco_inicial),
+                checked=lambda _item: preferencia_espaco_inicial(),
             ),
             pystray.MenuItem(
                 "Sair",

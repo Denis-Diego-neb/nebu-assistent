@@ -1,0 +1,25 @@
+{
+  "id": "mcp_train_37_retry_budget",
+  "objective": "Exercicio MCP 37/40: Implemente limite de tentativas para tool indisponivel usando relogio e sleeper injetados. Implemente o exemplo isolado em modules/mcp_training_37.py e seus testes em tests/test_mcp_training_37.py.",
+  "evidence": [
+    {
+      "path": "core/bootstrap.py",
+      "symbols": [
+        "criar_dispatcher"
+      ]
+    },
+    {
+      "path": "core/dispatcher.py",
+      "symbols": [
+        "Dispatcher.execute_plan"
+      ]
+    }
+  ],
+  "acceptance": [
+    "A implementacao usa somente a biblioteca padrao e nao importa main.py, Qwen, Gemini ou Codex.",
+    "Entradas e saidas sao objetos estruturados; nenhuma funcao interpreta frases do usuario.",
+    "Rede, hardware, relogio e espera, quando necessarios, sao dependencias injetadas.",
+    "Os testes usam unittest, nao acessam rede ou hardware e cobrem sucesso e rejeicao.",
+    "Somente modules/mcp_training_37.py e tests/test_mcp_training_37.py podem ser criados ou alterados."
+  ]
+}

@@ -25,7 +25,9 @@ recebe chamadas explícitas sem interpretar texto. `pedido_da_tool` converte os
 argumentos validados diretamente em pedidos do driver. Veja
 [ARQUITETURA.md](../ARQUITETURA.md) para o fluxo completo e limites atuais.
 O driver ainda pode ser migrado para `modules/iot/tuya.py`, preservando os imports
-antigos enquanto os demais consumidores migram. O transporte MCP ainda é futuro.
+antigos enquanto os demais consumidores migram. O transporte MCP fica em
+`integrations/mcp/` e publica o mesmo `Registry`, sem reimplementar handlers ou
+validação no transporte.
 
 Teste isolado, sem acionar o abajur:
 
@@ -44,3 +46,13 @@ Teste isolado, sem acionar o abajur:
 - O ciclo de vida dos dispositivos ainda permanece em `Nebula` e entra no
   modulo por callbacks. Ele pode ser extraido depois que o contrato de estado
   estiver estabilizado.
+
+## Terceira etapa: corrida e desktop
+
+- `modules/racing/modes.py` registra iniciar, parar e consultar RPM e boost por
+  callbacks tipados. Esses comandos não voltam ao parser de frases.
+- `modules/desktop/actions.py` concentra aplicativos, notas, YouTube e Google.
+  Cada argumento é validado e normalizado antes de chegar ao host.
+- `core/bootstrap.py` apenas injeta as funções do host nesses módulos. As tools
+  ainda não migradas continuam no adaptador legado, com nomes conhecidos e
+  frases fixas.

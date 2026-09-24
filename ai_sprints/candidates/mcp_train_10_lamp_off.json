@@ -1,0 +1,26 @@
+{
+  "id": "mcp_train_10_lamp_off",
+  "objective": "Exercicio MCP 10/40: Modele a tool abajur_desligar preservando idempotencia e retorno estruturado. Implemente o exemplo isolado em modules/mcp_training_10.py e seus testes em tests/test_mcp_training_10.py.",
+  "evidence": [
+    {
+      "path": "modules/iot/lights.py",
+      "symbols": [
+        "pedido_da_tool",
+        "executar_pedidos_abajur"
+      ]
+    },
+    {
+      "path": "core/registry.py",
+      "symbols": [
+        "Tool"
+      ]
+    }
+  ],
+  "acceptance": [
+    "A implementacao usa somente a biblioteca padrao e nao importa main.py, Qwen, Gemini ou Codex.",
+    "Entradas e saidas sao objetos estruturados; nenhuma funcao interpreta frases do usuario.",
+    "Rede, hardware, relogio e espera, quando necessarios, sao dependencias injetadas.",
+    "Os testes usam unittest, nao acessam rede ou hardware e cobrem sucesso e rejeicao.",
+    "Somente modules/mcp_training_10.py e tests/test_mcp_training_10.py podem ser criados ou alterados."
+  ]
+}

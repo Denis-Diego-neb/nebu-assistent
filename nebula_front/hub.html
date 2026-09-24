@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="description" content="Log ao vivo do Nebula Home Hub, o servidor doméstico que roda no notebook.">
+<title>Nebula Home Hub — monitor</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cellipse cx='20' cy='20' rx='17' ry='9' transform='rotate(-35 20 20)' fill='none' stroke='%239eabff' stroke-width='3'/%3E%3Ccircle cx='20' cy='20' r='5' fill='white'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="atmosphere.css">
+<link rel="stylesheet" href="hub.css">
+</head>
+<body class="hub">
+<canvas id="cosmos" aria-hidden="true"></canvas>
+<div class="vignette"></div>
+
+<header>
+  <span class="brand"><span class="brand-symbol">✧</span> NEBULA HOME HUB</span>
+  <div class="header-right">
+    <span id="link-state" class="hub-pill" role="status">CONECTANDO…</span>
+    <button id="motion" class="icon-button" aria-pressed="false" aria-label="Pausar animações" title="Pausar animações">Ⅱ</button>
+    <button data-fullscreen class="icon-button" aria-pressed="false" aria-label="Tela cheia (F11)" title="Tela cheia (F11)"><span data-fullscreen-icon>⤢</span></button>
+  </div>
+</header>
+
+<main class="hub-main">
+  <p class="eyebrow" id="hub-subtitle">NOTEBOOK · SERVIDOR DOMÉSTICO</p>
+
+  <section class="hub-metrics" aria-label="Métricas do servidor">
+    <div class="hub-metric"><strong id="m-total">0</strong><small>REQUISIÇÕES</small></div>
+    <div class="hub-metric"><strong id="m-clients">0</strong><small>CLIENTES 5 MIN</small></div>
+    <div class="hub-metric"><strong id="m-denied">0</strong><small>BLOQUEADAS</small></div>
+    <div class="hub-metric"><strong id="m-uptime">00:00:00</strong><small>TEMPO ATIVO</small></div>
+  </section>
+
+  <p class="hub-connection" id="last-connection">Última conexão: —</p>
+
+  <section class="hub-panel" aria-labelledby="sprints-title">
+    <div class="hub-panel-top">
+      <h2 id="sprints-title">Sprints · avaliações Gemini</h2>
+      <div class="hub-actions">
+        <button data-sprint="pause" class="hub-button">Pausar após a tarefa atual</button>
+        <button data-sprint="resume" class="hub-button">Retomar sprints</button>
+      </div>
+    </div>
+    <p id="sprints" class="hub-sprints">Aguardando resumo do PC…</p>
+  </section>
+
+  <section class="hub-panel hub-terminal-panel" aria-labelledby="terminal-title">
+    <div class="hub-panel-top">
+      <h2 id="terminal-title">Terminal · sprints e tarefas longas</h2>
+      <div class="hub-actions">
+        <span class="hub-toggle" id="terminal-info">Nenhuma sessão.</span>
+        <button id="terminal-stop" class="hub-button" disabled>Encerrar</button>
+      </div>
+    </div>
+    <form id="terminal-form" class="hub-terminal-form">
+      <input id="terminal-command" placeholder="Comando a rodar neste notebook" autocomplete="off" spellcheck="false" maxlength="4000">
+      <input id="terminal-cwd" placeholder="Pasta (opcional)" autocomplete="off" spellcheck="false">
+      <button class="hub-button" type="submit">Rodar</button>
+    </form>
+    <p class="hub-terminal-hint" id="terminal-status">As duas IAs usam as mesmas rotas por HTTP: <code>POST /hub/terminal</code> e <code>GET /hub/terminal/&lt;id&gt;?after=</code>.</p>
+    <div id="terminal-tabs" class="hub-terminal-tabs"></div>
+    <div id="terminal-output" class="hub-log hub-terminal-output" role="log" aria-live="polite" tabindex="0"></div>
+  </section>
+
+  <section class="hub-panel hub-log-panel" aria-labelledby="log-title">
+    <div class="hub-panel-top">
+      <h2 id="log-title">Log do servidor</h2>
+      <div class="hub-actions">
+        <label class="hub-toggle"><input type="checkbox" id="follow" checked> acompanhar o fim</label>
+        <button id="clear" class="hub-button">Limpar visualização</button>
+      </div>
+    </div>
+    <div id="log" class="hub-log" role="log" aria-live="polite" tabindex="0"></div>
+  </section>
+</main>
+
+<div class="bottom-caption"><span class="tiny-star">✦</span> O SERVIDOR CONTINUA MESMO COM ESTA JANELA FECHADA</div>
+
+<script src="fullscreen.js"></script>
+<script src="nebula-scene.js"></script>
+<script src="hub.js"></script>
+</body>
+</html>

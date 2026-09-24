@@ -824,7 +824,8 @@ class Nebula:
                 output.close()
             self._flash_outputs.pop(device, None)
         finais = {"rpm": self._encerrar_modo_rpm, "boost": self._encerrar_modo_boost,
-                  "ambilight": self._encerrar_modo_ambilight}
+                  "ambilight": self._encerrar_modo_ambilight,
+                  "beamng": self._encerrar_modo_ambilight}
         afetados = {c["mode"] for d in alterados for c in (antigo[d], novo[d])} & finais.keys()
         if primeira:
             afetados |= {c["mode"] for c in novo.values()} & finais.keys()
@@ -942,14 +943,19 @@ class Nebula:
                 self._keyboard_native_output = None
 
         iniciais = {"rpm": self._iniciar_modo_rpm, "boost": self._iniciar_modo_boost,
-                    "ambilight": self._iniciar_modo_ambilight}
+                    "ambilight": self._iniciar_modo_ambilight,
+                    "beamng": lambda: self._iniciar_modo_ambilight(profile="beamng")}
         for modo in sorted(afetados):
             participantes = [d for d in DEVICE_MODES if novo[d]["mode"] == modo]
             if not participantes:
                 continue
             try:
                 iniciais[modo]()
-                engine = getattr(self, "_modo_" + modo)
+                engine = (
+                    self._modo_ambilight
+                    if modo == "beamng"
+                    else getattr(self, "_modo_" + modo)
+                )
                 if engine is None or not engine.ativo:
                     raise ErroAbajur(f"Não foi possível iniciar {modo}.")
                 status = engine.status()
@@ -973,7 +979,15 @@ class Nebula:
     def _com_flash(self, device, output):
         if self._independent and self._devices[device].get("afterfire"):
             from exhaust_flash import ExhaustFlash
-            output = ExhaustFlash(output, keyboard=device == "keyboard")
+            existing = self._flash_outputs.get(device)
+            if existing is not None and getattr(existing, "device", None) is output:
+                return existing
+            output = ExhaustFlash(
+                output,
+                keyboard=device == "keyboard",
+                lamp=device == "lamp",
+                close_device=device != "lamp",
+            )
             self._flash_outputs[device] = output
         return output
 
@@ -1007,7 +1021,17 @@ class Nebula:
                 raise ValueError("Selecione o flash do abajur, teclado ou controle.")
             novo[device]["afterfire"] = valor["enabled"]
         else:
-            novo[device]["mode"] = valor.get("mode")
+            requested_mode = valor.get("mode")
+            if requested_mode == "beamng":
+                for paired in ("lamp", "keyboard"):
+                    novo[paired]["mode"] = "beamng"
+                novo["lamp"]["power"] = True
+            else:
+                if novo[device].get("mode") == "beamng":
+                    for paired in ("lamp", "keyboard"):
+                        if novo[paired].get("mode") == "beamng":
+                            novo[paired]["mode"] = "manual"
+                novo[device]["mode"] = requested_mode
         if device == "lamp" and novo[device]["mode"] != "manual":
             novo[device]["power"] = True
         self._aplicar_dispositivos(novo)
@@ -1066,7 +1090,11 @@ class Nebula:
             flash = self._flash_outputs.get(device)
             if flash is not None:
                 settings["error"] = settings["error"] or flash.error
-            engine = getattr(self, "_modo_" + settings["mode"], None)
+            engine = (
+                self._modo_ambilight
+                if settings["mode"] == "beamng"
+                else getattr(self, "_modo_" + settings["mode"], None)
+            )
             if engine is not None:
                 status = engine.status()
                 key = {"lamp": "erro_abajur", "keyboard": "erro_teclado", "controller": "erro_controle", "mobile": "erro"}[device]
@@ -1670,7 +1698,12 @@ class Nebula:
                 controle.liberar_animacao_externa(modo)
         return True, modo.erro
 
-    def _iniciar_modo_ambilight(self, *, hibrido: bool = False) -> bool:
+    def _iniciar_modo_ambilight(
+        self,
+        *,
+        hibrido: bool = False,
+        profile: str | None = None,
+    ) -> bool:
         with self._modo_ambilight_lock:
             existente = self._modo_ambilight
         if existente is not None and existente.ativo:
@@ -1683,12 +1716,15 @@ class Nebula:
                 self._encerrar_modo_rpm()
             self._encerrar_modo_boost()
 
-        modo_alvos = self._modo_controle_selecionado if hibrido else "ambilight"
+        modo_alvos = profile or (
+            self._modo_controle_selecionado if hibrido else "ambilight"
+        )
         usar_abajur = self._alvo_ativo(modo_alvos, "lamp")
         usar_teclado = self._alvo_ativo(modo_alvos, "keyboard")
         usar_controle = (not hibrido or modo_alvos == "ambilight_rpm") and self._alvo_ativo(modo_alvos, "controller")
         capturador = CapturadorJanelaNetflix("beamng") if modo_alvos == "beamng" else None
         controle: ControleAbajurTuya | None = None
+        saida_abajur = None
         aviso_abajur: str | None = None
         try:
             if not usar_abajur:
@@ -1702,6 +1738,7 @@ class Nebula:
             if not isinstance(controle_candidato, ControleAbajurTuya):
                 raise ErroAbajur("O Ambilight precisa do controle Tuya pela rede local.")
             controle = controle_candidato
+            saida_abajur = self._com_flash("lamp", controle)
         except (ErroAbajur, OSError) as exc:
             if usar_abajur:
                 aviso_abajur = str(exc)
@@ -1734,11 +1771,12 @@ class Nebula:
             return False
 
         modo = ModoAmbilight(
-            controle.enviar_rgb_animacao if controle is not None else (lambda _r, _g, _b: None),
+            saida_abajur.enviar_rgb_animacao if saida_abajur is not None else (lambda _r, _g, _b: None),
             saida_secundaria=saidas_teclado.secundaria,
             saida_zonas=saidas_teclado.zonas,
             saida_controle=lightbar.set_rgb if lightbar is not None else None,
             capturador=capturador,
+            profile="beamng" if modo_alvos == "beamng" else "default",
         )
         reservado = False
         try:
@@ -1759,10 +1797,11 @@ class Nebula:
                         saida_zonas=saidas_teclado.zonas,
                         saida_controle=lightbar.set_rgb if lightbar is not None else None,
                         capturador=capturador,
+                        profile="beamng" if modo_alvos == "beamng" else "default",
                     )
             def restaurar_ambilight() -> None:
                 try:
-                    if controle is not None:
+                    if controle is not None and getattr(modo, "enviou_primeiro_quadro", True):
                         controle.restaurar_perfil_animacao(brilho_inicial)
                 finally:
                     if teclado is not None:
@@ -1793,15 +1832,21 @@ class Nebula:
                 if enabled and output is None:
                     self._device_errors[device] = warning or "Dispositivo indisponível."
         if teclado is not None and controle is not None:
-            comportamento_teclado = (
-                "as cores da parte inferior da tela"
-                if saidas_teclado.multizona else
-                "a cor media da tela sem regravar o quadro completo de LEDs"
-            )
-            self.saida.falar(
-                "Ambilight ativado. Lampada acompanha a media da tela; "
-                f"Kumara acompanha {comportamento_teclado}."
-            )
+            if modo_alvos == "beamng":
+                self.saida.falar(
+                    "Modo BeamNG ativado. Abajur acompanha o ambiente externo; "
+                    "Kumara acompanha as cores da cabine."
+                )
+            else:
+                comportamento_teclado = (
+                    "as cores da parte inferior da tela"
+                    if saidas_teclado.multizona else
+                    "a cor media da tela sem regravar o quadro completo de LEDs"
+                )
+                self.saida.falar(
+                    "Ambilight ativado. Lampada acompanha a media da tela; "
+                    f"Kumara acompanha {comportamento_teclado}."
+                )
         elif teclado is not None:
             detalhe = f" {aviso_abajur}." if aviso_abajur else ""
             self.saida.falar(

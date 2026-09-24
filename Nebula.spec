@@ -4,9 +4,15 @@ from PyInstaller.utils.hooks import collect_all
 datas = [
     ('assets/nebula.png', 'assets'),
     ('contexto_nebula.md', '.'),
+    # Front espacial servido em /espaco pelo painel local.
+    ('nebula_front', 'nebula_front'),
 ]
 binaries = []
-hiddenimports = ['win32com.client', 'pythoncom', 'pywintypes']
+hiddenimports = ['win32com.client', 'pythoncom', 'pywintypes', 'front_assets', 'front_window']
+# O backend da colaboracao NAO entra no pacote de proposito: ele e mantido
+# pelo outro agente e e lido do disco, ao lado do executavel. Empacotado, ele
+# ficava congelado na data do build e o painel respondia 404 em rotas que ja
+# existiam na fonte.
 hiddenimports += [
     'winrt.windows.media.control', 'winrt._winrt_windows_media_control',
     'winrt.windows.storage.streams', 'winrt._winrt_windows_storage_streams',

@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="description" content="Espaço da Nebula: conversa, casa, projetos, mídia e telefone no mesmo lugar.">
+<title>Nebula — seu espaço</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cellipse cx='20' cy='20' rx='17' ry='9' transform='rotate(-35 20 20)' fill='none' stroke='%239eabff' stroke-width='3'/%3E%3Ccircle cx='20' cy='20' r='5' fill='white'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="atmosphere.css">
+<link rel="stylesheet" href="panel.css">
+</head>
+<body>
+<canvas id="cosmos" aria-hidden="true"></canvas>
+<div class="vignette"></div>
+<button id="gyro" aria-pressed="false">◎ Movimento do telefone</button>
+<div id="sensor-status" role="status"></div>
+
+<header>
+  <a class="brand" href="#" aria-label="Nebula início"><span class="brand-symbol">✧</span> NEBULA</a>
+  <div class="header-right">
+    <span id="link-state" class="state-pill" role="status">CONECTANDO…</span>
+    <button id="motion" class="icon-button" aria-label="Pausar animações" title="Pausar animações">Ⅱ</button>
+    <button data-fullscreen class="icon-button" aria-pressed="false" aria-label="Tela cheia (F11)" title="Tela cheia (F11)"><span data-fullscreen-icon>⤢</span></button>
+  </div>
+</header>
+
+<nav class="sidebar" aria-label="Navegação principal">
+  <button data-view="chat" class="active" title="Conversa"><span>◌</span><small>Conversa</small></button>
+  <button data-view="casa" title="Casa"><span>⌂</span><small>Casa</small></button>
+  <button data-view="projects" title="Projetos"><span>▱</span><small>Projetos</small></button>
+  <button data-view="memory" title="Memória"><span>✧</span><small>Memória</small></button>
+  <button data-view="audio" title="Áudio"><span>≋</span><small>Áudio</small></button>
+  <button data-view="dupla" title="Dupla"><span>⧉</span><small>Dupla</small></button>
+  <div class="nav-divider"></div>
+  <button data-view="device" title="Telefone"><span>▯</span><small>Telefone</small></button>
+  <button data-view="terminal" title="Terminal"><span>⌘</span><small>Terminal</small></button>
+</nav>
+
+<main>
+
+<!-- ------------------------------------------------------------ conversa -->
+<section id="chat" class="view active">
+  <div class="welcome">
+    <p class="eyebrow">UM UNIVERSO DE POSSIBILIDADES</p>
+    <h1>O que vamos explorar?</h1>
+    <p class="subtitle">Fale ou escreva. A Nebula executa no computador.</p>
+  </div>
+
+  <div id="messages" class="messages" aria-live="polite"></div>
+
+  <div class="composer-wrap">
+    <div class="suggestions" id="chat-suggestions">
+      <button data-prompt="pause o vídeo">Pausar o vídeo <span>↗</span></button>
+      <button data-prompt="ative o modo ambilight">Modo ambilight <span>↗</span></button>
+      <button data-view="projects">Meus projetos <span>↗</span></button>
+    </div>
+    <form id="chat-form" class="composer">
+      <input id="prompt" aria-label="Comando para a Nebula" placeholder="Ex.: abra o Discord, ative o modo boost…" autocomplete="off">
+      <button type="button" id="chat-listen" class="voice-button" aria-label="Ditar o comando" title="Ditar o comando">≋</button>
+      <button class="send-button" aria-label="Enviar comando">↑</button>
+    </form>
+    <p class="composer-note" id="chat-status">Pronta para receber comandos.</p>
+
+    <div class="inline-panel" id="chat-extras">
+      <div class="inline-row">
+        <span class="inline-label" id="pause-state">Consultando estado…</span>
+        <div class="inline-actions">
+          <button class="chip" data-pause="1">Pausar Nebula</button>
+          <button class="chip" data-pause="0">Retomar</button>
+          <button class="chip" id="show-window">Mostrar janela no PC</button>
+        </div>
+      </div>
+      <div class="inline-row">
+        <input id="feedback-comment" maxlength="2000" placeholder="A última resposta ajudou? (opcional)">
+        <div class="inline-actions">
+          <button class="chip" data-feedback="positivo">△ Gostei</button>
+          <button class="chip" data-feedback="negativo">▽ Pode melhorar</button>
+        </div>
+      </div>
+      <p class="hint" id="feedback-status"></p>
+    </div>
+  </div>
+</section>
+
+<!-- ---------------------------------------------------------------- casa -->
+<section id="casa" class="view">
+  <div class="section-heading">
+    <p class="eyebrow">SUA CASA. UM CONTROLE.</p>
+    <h1>Modos e iluminação</h1>
+    <p class="subtitle" id="casa-subtitle">Consultando o painel de controle…</p>
+  </div>
+
+  <div class="panel-grid">
+    <section class="panel" aria-labelledby="modes-title">
+      <div class="panel-top">
+        <h2 id="modes-title">Modo ativo</h2>
+        <button class="chip" id="mute-toggle" aria-pressed="false">Modo mudo</button>
+      </div>
+      <div class="chip-row" id="modes"></div>
+      <p class="hint" id="mode-detail"></p>
+    </section>
+
+    <section class="panel" aria-labelledby="lamp-title">
+      <h2 id="lamp-title">Abajur</h2>
+      <div class="chip-row">
+        <button class="chip" data-lamp="on">Ligar</button>
+        <button class="chip" data-lamp="off">Desligar</button>
+        <input type="color" id="lamp-color" value="#8f7fff" aria-label="Cor do abajur">
+      </div>
+      <label class="slider-row">Brilho <input type="range" id="lamp-brightness" min="1" max="100" value="70"><output id="lamp-brightness-value">70%</output></label>
+      <label class="slider-row">Temperatura <input type="range" id="lamp-temperature" min="1" max="100" value="50"><output id="lamp-temperature-value">50%</output></label>
+      <p class="hint" id="lamp-status">—</p>
+    </section>
+
+    <section class="panel" aria-labelledby="air-title">
+      <h2 id="air-title">Ar-condicionado</h2>
+      <div class="chip-row">
+        <button class="chip" data-air="on">Ligar</button>
+        <button class="chip" data-air="off">Desligar</button>
+        <button class="chip" data-air-temp="-1">− 1 °C</button>
+        <span class="reading" id="air-temperature">—</span>
+        <button class="chip" data-air-temp="1">+ 1 °C</button>
+      </div>
+      <div class="chip-row" id="air-modes"></div>
+      <div class="chip-row" id="air-fans"></div>
+      <p class="hint" id="air-status">—</p>
+    </section>
+
+    <section class="panel" aria-labelledby="devices-title">
+      <h2 id="devices-title">Dispositivos</h2>
+      <div id="devices" class="device-list"></div>
+    </section>
+
+    <section class="panel" aria-labelledby="presets-title">
+      <div class="panel-top">
+        <h2 id="presets-title">Presets</h2>
+        <div class="inline-actions">
+          <input id="preset-name" placeholder="Nome do preset" maxlength="60">
+          <button class="chip" id="preset-save">Salvar atual</button>
+        </div>
+      </div>
+      <div class="chip-row" id="presets"></div>
+    </section>
+
+    <section class="panel telemetry" aria-labelledby="telemetry-title">
+      <h2 id="telemetry-title">Telemetria</h2>
+      <div class="reading-grid" id="telemetry"></div>
+    </section>
+  </div>
+  <p class="section-note" id="casa-error"></p>
+</section>
+
+<!-- ------------------------------------------------------------ projetos -->
+<section id="projects" class="view">
+  <div class="section-heading">
+    <p class="eyebrow">CONSTELAÇÃO CRIATIVA</p>
+    <h1>Seus projetos</h1>
+    <p class="subtitle" id="projects-active">Consultando o projeto ativo…</p>
+  </div>
+  <div class="folders" id="project-list"></div>
+  <form class="inline-panel" id="project-form">
+    <div class="inline-row">
+      <input id="project-path" placeholder="Ou informe o caminho completo da pasta">
+      <div class="inline-actions">
+        <button class="chip" type="submit">Usar esta pasta</button>
+        <button class="chip" type="button" id="project-reload">Atualizar lista</button>
+      </div>
+    </div>
+    <p class="hint" id="project-status"></p>
+  </form>
+</section>
+
+<section id="workspace" class="view">
+  <div class="section-heading">
+    <button class="back" data-view="projects">← Todos os projetos</button>
+    <h1 id="project-title">Projeto</h1>
+    <p class="subtitle" id="project-subtitle"></p>
+  </div>
+  <div class="workspace-panel">
+    <div class="workspace-tabs" role="tablist" aria-label="Área do projeto">
+      <button role="tab" aria-selected="true" data-panel="codex">✧ Codex</button>
+      <button role="tab" aria-selected="false" data-panel="shell">⌘ Terminal</button>
+      <button role="tab" aria-selected="false" data-panel="actions">▱ Ações</button>
+    </div>
+    <div id="project-content">
+
+      <div data-workspace="codex">
+        <h2>Uma ideia. Um próximo passo.</h2>
+        <p>O pedido roda o Codex na pasta do projeto ativo, no computador.</p>
+        <form id="codex-form">
+          <textarea id="codex-prompt" rows="4" placeholder="Descreva a tarefa para o Codex"></textarea>
+          <div class="inline-actions">
+            <button class="chip primary" type="submit">Enviar ao Codex</button>
+            <button class="chip" type="button" id="codex-listen">≋ Ditar</button>
+            <button class="chip" type="button" id="codex-clear">Limpar</button>
+          </div>
+        </form>
+        <p class="hint" id="codex-status">Nenhuma solicitação enviada.</p>
+        <pre class="console" id="codex-output"></pre>
+      </div>
+
+      <div data-workspace="shell" hidden>
+        <h2>Terminal do projeto</h2>
+        <p>PowerShell na pasta do projeto ativo, com limite de 60 segundos por comando.</p>
+        <form id="workspace-shell-form" class="inline-row">
+          <input id="workspace-shell-input" placeholder="git status" autocomplete="off">
+          <button class="chip primary" type="submit">Executar</button>
+        </form>
+        <pre class="console" id="workspace-shell-output"></pre>
+      </div>
+
+      <div data-workspace="actions" hidden>
+        <h2>Ações no computador</h2>
+        <p>Atalhos que agem na pasta do projeto ativo.</p>
+        <div class="inline-actions">
+          <button class="chip" id="open-vscode">Abrir VS Code</button>
+          <button class="chip" id="show-window-workspace">Mostrar janela da Nebula</button>
+        </div>
+        <p class="hint" id="actions-status"></p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ------------------------------------------------------------- memória -->
+<section id="memory" class="view">
+  <div class="section-heading">
+    <p class="eyebrow">O QUE PERMANECE</p>
+    <h1>Memória</h1>
+    <p class="subtitle">Ideias salvas no PC e o histórico completo da conversa.</p>
+  </div>
+  <div class="panel-grid">
+    <section class="panel" aria-labelledby="idea-title">
+      <h2 id="idea-title">Salvar uma ideia</h2>
+      <form id="idea-form">
+        <textarea id="idea-text" rows="4" placeholder="Digite ou dite sua ideia"></textarea>
+        <div class="inline-actions">
+          <button class="chip primary" type="submit">Salvar ideia</button>
+          <button class="chip" type="button" id="idea-listen">≋ Ditar</button>
+        </div>
+      </form>
+      <p class="hint" id="idea-status"></p>
+    </section>
+    <section class="panel history-panel" aria-labelledby="history-title">
+      <div class="panel-top">
+        <h2 id="history-title">Histórico da conversa</h2>
+        <button class="chip" id="history-reload">Atualizar</button>
+      </div>
+      <div class="history" id="history"></div>
+    </section>
+  </div>
+</section>
+
+<!-- --------------------------------------------------------------- áudio -->
+<section id="audio" class="view">
+  <div class="audio-content">
+    <p class="eyebrow">MENOS TECLAS. MAIS PRESENÇA.</p>
+    <button id="audio-orb" aria-label="Tocar ou pausar a mídia do computador">
+      <img id="audio-art" alt="" hidden>
+      <span id="audio-orb-icon">≋</span>
+    </button>
+    <h1 id="audio-title">Nenhuma mídia ativa</h1>
+    <p id="audio-description" class="subtitle">Toque algo no computador para controlar por aqui.</p>
+    <div class="progress" aria-hidden="true"><span id="audio-progress"></span></div>
+    <div class="chip-row centered">
+      <button class="chip" data-media="previous">⟨⟨</button>
+      <button class="chip" data-media="play_pause">▷ / Ⅱ</button>
+      <button class="chip" data-media="next">⟩⟩</button>
+    </div>
+    <p class="section-note">Controle a mídia do celular pela aba Telefone.</p>
+    <p class="hint" id="audio-status"></p>
+  </div>
+</section>
+
+<!-- --------------------------------------------------------------- dupla -->
+<section id="dupla" class="view">
+  <div class="section-heading">
+    <p class="eyebrow">DESENVOLVIMENTO COM DUAS IAS</p>
+    <h1>Dupla</h1>
+    <p class="subtitle" id="dupla-subtitle">Consultando a coordenação…</p>
+    <p class="hint" id="dupla-projeto"></p>
+    <button class="chip" data-view="projects">Selecionar projeto</button>
+    <p class="aviso-parada" id="dupla-parada" role="status" hidden></p>
+  </div>
+
+
+
+  <div class="panel-grid">
+
+    <section class="panel dupla-frente" aria-labelledby="dupla-frente-titulo">
+      <div class="panel-top">
+        <h2 id="dupla-frente-titulo">Converse com as duas</h2>
+        <span class="hint">Peça alterações no projeto: Astra implementa, Claude revisa e testa. As sessões continuam nas próximas mensagens.</span>
+      </div>
+      <div class="history" id="dupla-frente"></div>
+      <form id="dupla-mensagem-form" class="inline-row">
+        <input id="dupla-mensagem" aria-label="Pedido para Astra e Claude" placeholder="O que vamos desenvolver?" maxlength="4000" autocomplete="off" enterkeyhint="send">
+        <button class="chip primary" type="submit">Enviar</button>
+      </form>
+      <p class="hint" id="dupla-mensagem-status"></p>
+    </section>
+
+  <form class="inline-panel dupla-pedido" id="dupla-ideia-form">
+    <div class="inline-row">
+      <input id="dupla-ideia" placeholder="A ideia que as duas vão executar" maxlength="2000">
+      <div class="inline-actions">
+        <label class="orcamento">Tokens por agente
+          <input type="number" id="dupla-orcamento" min="2000" max="2000000" step="1000" value="60000">
+        </label>
+        <button class="chip primary" type="submit">Abrir pedido</button>
+      </div>
+    </div>
+    <p class="hint" id="dupla-ideia-status"></p>
+  </form>
+
+    <section class="panel" aria-labelledby="dupla-execucao-titulo">
+      <div class="panel-top">
+        <h2 id="dupla-execucao-titulo">Execução</h2>
+        <div class="inline-actions">
+          <button class="chip primary" id="dupla-run">Executar</button>
+          <button class="chip" id="dupla-pause">Pausar</button>
+          <button class="chip" id="dupla-stop" disabled>Interromper agora</button>
+        </div>
+      </div>
+      <p id="dupla-execucao">Nenhuma execução em andamento.</p>
+      <div class="history" id="dupla-atividade" aria-live="polite"></div>
+      <p class="hint" id="dupla-execucao-status"></p>
+    </section>
+
+    <section class="panel" aria-labelledby="dupla-orcamento-titulo">
+      <h2 id="dupla-orcamento-titulo">Orçamento de tokens</h2>
+      <p>O limite bloqueia novas rodadas; não corta uma chamada já iniciada.</p>
+      <div id="dupla-orcamentos" class="saldo"></div>
+    </section>
+
+    <section class="panel dupla-fila" aria-labelledby="dupla-tarefas-titulo">
+      <div class="panel-top">
+        <h2 id="dupla-tarefas-titulo">Tarefas por prioridade</h2>
+        <span class="hint">(impacto×3 + urgência×2 + risco×2) × confiança ÷ tokens</span>
+      </div>
+      <div id="dupla-tarefas" class="fila"></div>
+    </section>
+
+    <section class="panel dupla-bastidores" aria-labelledby="dupla-bastidores-titulo">
+      <div class="panel-top">
+        <h2 id="dupla-bastidores-titulo">Coordenação</h2>
+        <button class="chip" id="dupla-bastidores-abrir" aria-expanded="false">Mostrar</button>
+      </div>
+      <p>Decisões, reservas, bloqueios, evidências e consumo. Fora do chat para ele não virar ruído.</p>
+      <div class="history" id="dupla-bastidores" hidden></div>
+    </section>
+
+    <section class="panel dupla-diario" aria-labelledby="dupla-log-titulo">
+      <div class="panel-top">
+        <h2 id="dupla-log-titulo">Diário</h2>
+        <button class="chip" id="dupla-log-abrir" aria-expanded="false">Abrir</button>
+      </div>
+      <p class="hint" id="dupla-log-caminho">Nenhuma seção registrada ainda.</p>
+      <pre class="console" id="dupla-log" hidden></pre>
+    </section>
+
+  </div>
+</section>
+
+<!-- ------------------------------------------------------------ telefone -->
+<section id="device" class="view">
+  <div class="section-heading">
+    <p class="eyebrow">O APARELHO PAREADO</p>
+    <h1>Telefone</h1>
+    <p class="subtitle" id="device-summary">Consultando o aparelho…</p>
+  </div>
+  <div class="panel-grid">
+    <section class="panel" aria-labelledby="device-actions-title">
+      <h2 id="device-actions-title">Comandos</h2>
+      <div class="chip-row">
+        <button class="chip" data-device="locate">Localizar</button>
+        <button class="chip" data-device="flashlight_on">Lanterna</button>
+        <button class="chip" data-device="flashlight_off">Apagar lanterna</button>
+        <button class="chip" data-device="media_previous">⟨⟨</button>
+        <button class="chip" data-device="media_play_pause">▷ / Ⅱ</button>
+        <button class="chip" data-device="media_next">⟩⟩</button>
+        <button class="chip danger" data-device="lock_nebula">Bloquear</button>
+        <button class="chip" data-device="unlock_nebula">Desbloquear</button>
+      </div>
+      <p class="hint" id="device-status"></p>
+      <p class="hint"><a id="device-map" href="#" target="_blank" rel="noreferrer noopener" hidden>Abrir última localização no mapa ↗</a></p>
+    </section>
+    <section class="panel" aria-labelledby="notifications-title">
+      <h2 id="notifications-title">Notificações compartilhadas</h2>
+      <div class="history" id="device-notifications"></div>
+    </section>
+    <section class="panel transfer-panel" aria-labelledby="transfer-title">
+      <div class="panel-top">
+        <h2 id="transfer-title">Transferência</h2>
+        <button class="chip" id="transfer-reload">Atualizar</button>
+      </div>
+      <div class="history" id="transfer-list"></div>
+      <form id="transfer-form" class="inline-row">
+        <input id="transfer-text" placeholder="Mensagem para o telefone" maxlength="8000">
+        <button class="chip primary" type="submit">Enviar</button>
+      </form>
+      <p class="hint" id="transfer-status"></p>
+    </section>
+  </div>
+</section>
+
+<!-- ------------------------------------------------------------ terminal -->
+<section id="terminal" class="view">
+  <div class="section-heading">
+    <p class="eyebrow">POR TRÁS DAS ESTRELAS</p>
+    <h1>Terminal</h1>
+    <p class="subtitle" id="terminal-subtitle">PowerShell na pasta do projeto ativo.</p>
+  </div>
+  <div class="terminal">
+    <div class="terminal-top">
+      <span id="terminal-project">nebula / —</span>
+      <span id="terminal-state">PRONTO</span>
+    </div>
+    <pre class="console tall" id="terminal-output"></pre>
+    <form id="terminal-form" class="terminal-form">
+      <span class="terminal-prompt">nebula ~</span>
+      <input id="terminal-input" aria-label="Comando do PowerShell" placeholder="git status" autocomplete="off" spellcheck="false">
+      <button class="chip primary" type="submit">Executar</button>
+    </form>
+  </div>
+</section>
+
+</main>
+
+<nav class="mobile-nav" aria-label="Navegação do telefone">
+  <button data-view="chat" class="active" aria-current="page"><span aria-hidden="true">◌</span><small>Conversa</small></button>
+  <button data-view="dupla"><span aria-hidden="true">⧉</span><small>Dupla</small></button>
+  <button data-view="casa"><span aria-hidden="true">⌂</span><small>Casa</small></button>
+  <button id="mobile-menu-toggle" aria-expanded="false" aria-controls="orbit-menu"><span aria-hidden="true">☰</span><small>Menu</small></button>
+</nav>
+
+<div class="bottom-caption"><span class="tiny-star">✦</span> PRESENTE, MESMO NO SILÊNCIO</div>
+
+<button id="orbit-toggle" aria-expanded="false" aria-controls="orbit-menu" aria-label="Abrir navegação orbital"><span>✧</span></button>
+<div id="orbit-menu" role="navigation" aria-label="Todas as páginas" hidden>
+  <button data-view="chat" style="--x:-126px;--y:-22px">◌<small>Conversa</small></button>
+  <button data-view="casa" style="--x:-112px;--y:-102px">⌂<small>Casa</small></button>
+  <button data-view="projects" style="--x:-54px;--y:-158px">▱<small>Projetos</small></button>
+  <button data-view="memory" style="--x:26px;--y:-176px">✧<small>Memória</small></button>
+  <button data-view="audio" style="--x:102px;--y:-140px">≋<small>Áudio</small></button>
+  <button data-view="dupla" style="--x:140px;--y:-64px">⧉<small>Dupla</small></button>
+  <button data-view="device" style="--x:166px;--y:10px">▯<small>Telefone</small></button>
+  <button data-view="terminal" style="--x:150px;--y:82px">⌘<small>Terminal</small></button>
+</div>
+<button id="menu-backdrop" aria-label="Fechar navegação" hidden></button>
+
+<script src="fullscreen.js"></script>
+<script src="nebula-scene.js"></script>
+<script src="app.js"></script>
+<script src="nebula-app.js"></script>
+</body>
+</html>

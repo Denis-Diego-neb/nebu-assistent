@@ -1,6 +1,7 @@
 # core/agents/ollama_client.py
 
 import requests
+from typing import Any
 
 
 class OllamaClient:
@@ -23,6 +24,10 @@ class OllamaClient:
         temperature: float = 0.1,
         num_ctx: int = 8192,
         num_predict: int | None = None,
+        format_schema: dict[str, Any] | None = None,
+        seed: int | None = None,
+        num_gpu: int | None = None,
+        num_thread: int | None = None,
     ) -> str:
 
         messages = []
@@ -44,6 +49,12 @@ class OllamaClient:
         }
         if num_predict is not None:
             options["num_predict"] = num_predict
+        if seed is not None:
+            options["seed"] = seed
+        if num_gpu is not None:
+            options["num_gpu"] = num_gpu
+        if num_thread is not None:
+            options["num_thread"] = num_thread
 
         payload = {
             "model": self.model,
@@ -53,6 +64,8 @@ class OllamaClient:
             "keep_alive": "30m",
             "options": options,
         }
+        if format_schema is not None:
+            payload["format"] = format_schema
 
         response = requests.post(
             f"{self.host}/api/chat",

@@ -161,3 +161,41 @@ esta ativo. Cada job fixa arquivos permitidos e comandos de teste. O patch do 4B
 e aplicado apenas em um Git worktree descartavel, revisado pelo 9B antes e depois
 dos testes. O resultado fica como patch e relatorio; nenhum agente local faz
 commit, merge ou push.
+
+O reviewer 9B usa temperatura zero, seed fixo e JSON Schema para uma triagem
+local deterministica. O modo thinking pode ser ativado com
+`NEBULA_SPRINT_REVIEWER_THINK=1`, mas fica desligado por padrao enquanto o 9B
+roda majoritariamente em CPU. Uma aprovacao so vale com risco baixo, sem
+bloqueios ou testes pendentes e com evidencia por arquivo e linha. Depois disso,
+`integrations/gemini/` prepara a revisao profunda em uma sessao autenticada do
+Gemini Web. O login e os cookies
+nao entram na Nebula: a ponte persiste apenas o prompt e a resposta, vinculados
+ao fingerprint da sprint. O estado `waiting_gemini` nunca e interpretado como
+aprovacao.
+
+Essa ponte separa o transporte das capacidades futuras. `review` e o primeiro
+fluxo conectado; conversa e pesquisa podem usar o mesmo adaptador depois, sem
+misturar essas decisoes com o executor de tools ou com `main.py`. A sessao web
+precisa ser conduzida por um agente de navegador enquanto estiver ativa. Para
+execucao totalmente autonoma sem uma sessao de agente, sera necessario um
+transporte oficial nao interativo; o watcher local continuara bloqueado ate uma
+resposta valida em vez de automatizar cookies da conta Google.
+
+Quando uma Qwen fica offline, excede o timeout ou devolve uma saida corrompida,
+o autopilot abre um circuit breaker persistente. Durante 30 minutos as sprints
+seguintes nao aguardam novamente o mesmo agente. O `codex app-server` e iniciado
+sob demanda apenas no loopback e o `gpt-5.6-terra`, com reasoning `low`, assume
+a etapa interrompida em thread efemera, sandbox `read-only` e sem aprovacoes.
+A resposta fica vinculada ao fingerprint da sprint para que o watcher nao gaste
+outra chamada ao repetir o job.
+
+Se o worker cair, o Terra produz somente o patch estruturado. Se o reviewer
+cair, a revisao previa e adiada: o patch validado e aplicado somente no worktree
+descartavel, os testes fixos rodam e o Terra faz a revisao final antes do gate
+Gemini. O fallback pode ser desligado com `NEBULA_CODEX_FALLBACK=0`.
+
+Devido a falha intermitente conhecida na VRAM da 1660 Super, o worker 4B pede
+`num_gpu=0` por padrao. Isso troca velocidade por respostas deterministicas e
+evita que uma falha de memoria gere codigo aparentemente valido. Quando a GPU
+for substituida, `NEBULA_SPRINT_WORKER_NUM_GPU=auto` restaura a decisao normal
+do Ollama.

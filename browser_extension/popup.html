@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Nebula Gemini Bridge</title>
+<style>
+body{font:14px system-ui;width:390px;padding:14px;color:#192434;background:#f4f7fb}
+label{display:block;margin-top:12px}input,textarea{box-sizing:border-box;width:100%;margin:6px 0;padding:8px}
+button{margin:4px 0;padding:8px;cursor:pointer}textarea{min-height:150px}#status{white-space:pre-wrap;overflow-wrap:anywhere}small{display:block}
+</style></head><body>
+<h2>Nebula ↔ Gemini</h2>
+<label>Token exibido pela ponte local<input id="token" type="password" autocomplete="off"></label>
+<button id="save">Conectar ponte</button> <button id="refresh">Atualizar / testar</button>
+<p id="status" role="status">Carregando…</p>
+<button id="auto">Iniciar avaliações automáticas</button>
+<small id="autoStatus">Cada avaliação usa uma aba exclusiva. Erros interrompem o envio automático.</small>
+<section id="job" hidden>
+<strong id="jobName"></strong>
+<p>Copie o prompt, cole e envie no Gemini. Quando a resposta terminar, cole abaixo somente o JSON completo.</p>
+<button id="copy">Copiar prompt</button>
+<label>Resposta do Gemini<textarea id="response" spellcheck="false"></textarea></label>
+<button id="submit">Registrar resposta na Nebula</button>
+<button id="reset">Liberar job local</button>
+<small>Liberar remove a cópia da extensão. O job permanece na fila da Nebula.</small>
+</section><script src="popup.js"></script></body></html>

@@ -1,0 +1,26 @@
+{
+  "id": "mcp_train_21_mcp_error_result",
+  "objective": "Exercicio MCP 21/40: Converta erros de dominio em resultados MCP estruturados e estaveis. Implemente o exemplo isolado em modules/mcp_training_21.py e seus testes em tests/test_mcp_training_21.py.",
+  "evidence": [
+    {
+      "path": "services/tool_server.py",
+      "symbols": [
+        "ToolServer",
+        "ToolHandler.do_POST"
+      ]
+    },
+    {
+      "path": "core/dispatcher.py",
+      "symbols": [
+        "Dispatcher.call_tool"
+      ]
+    }
+  ],
+  "acceptance": [
+    "A implementacao usa somente a biblioteca padrao e nao importa main.py, Qwen, Gemini ou Codex.",
+    "Entradas e saidas sao objetos estruturados; nenhuma funcao interpreta frases do usuario.",
+    "Rede, hardware, relogio e espera, quando necessarios, sao dependencias injetadas.",
+    "Os testes usam unittest, nao acessam rede ou hardware e cobrem sucesso e rejeicao.",
+    "Somente modules/mcp_training_21.py e tests/test_mcp_training_21.py podem ser criados ou alterados."
+  ]
+}

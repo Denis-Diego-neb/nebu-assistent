@@ -1,0 +1,27 @@
+{
+  "id": "mcp_train_25_device_descriptor",
+  "objective": "Exercicio MCP 25/40: Modele descritor de dispositivo com id, nome, endpoint LAN e tools anunciadas. Implemente o exemplo isolado em modules/mcp_training_25.py e seus testes em tests/test_mcp_training_25.py.",
+  "evidence": [
+    {
+      "path": "services/network.py",
+      "symbols": [
+        "DeviceEndpoint",
+        "DeviceConnection.discover",
+        "DeviceConnection.call_tool"
+      ]
+    },
+    {
+      "path": "core/registry.py",
+      "symbols": [
+        "Registry.list_tools"
+      ]
+    }
+  ],
+  "acceptance": [
+    "A implementacao usa somente a biblioteca padrao e nao importa main.py, Qwen, Gemini ou Codex.",
+    "Entradas e saidas sao objetos estruturados; nenhuma funcao interpreta frases do usuario.",
+    "Rede, hardware, relogio e espera, quando necessarios, sao dependencias injetadas.",
+    "Os testes usam unittest, nao acessam rede ou hardware e cobrem sucesso e rejeicao.",
+    "Somente modules/mcp_training_25.py e tests/test_mcp_training_25.py podem ser criados ou alterados."
+  ]
+}

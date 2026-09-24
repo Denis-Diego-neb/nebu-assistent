@@ -1,0 +1,25 @@
+{
+  "id": "mcp_train_36_structured_result",
+  "objective": "Exercicio MCP 36/40: Converta resultado de tool em contexto estruturado para o modelo sem concatenar comandos. Implemente o exemplo isolado em modules/mcp_training_36.py e seus testes em tests/test_mcp_training_36.py.",
+  "evidence": [
+    {
+      "path": "core/bootstrap.py",
+      "symbols": [
+        "criar_dispatcher"
+      ]
+    },
+    {
+      "path": "core/dispatcher.py",
+      "symbols": [
+        "Dispatcher.execute_plan"
+      ]
+    }
+  ],
+  "acceptance": [
+    "A implementacao usa somente a biblioteca padrao e nao importa main.py, Qwen, Gemini ou Codex.",
+    "Entradas e saidas sao objetos estruturados; nenhuma funcao interpreta frases do usuario.",
+    "Rede, hardware, relogio e espera, quando necessarios, sao dependencias injetadas.",
+    "Os testes usam unittest, nao acessam rede ou hardware e cobrem sucesso e rejeicao.",
+    "Somente modules/mcp_training_36.py e tests/test_mcp_training_36.py podem ser criados ou alterados."
+  ]
+}
