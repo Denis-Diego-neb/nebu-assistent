@@ -1,0 +1,29 @@
+{
+  "bind_host": "100.78.67.81",
+  "port": 8790,
+  "token_env": "NEBULA_WORKER_TOKEN",
+  "allowed_clients": ["100.92.82.41/32", "192.168.15.12/32", "127.0.0.1/32"],
+  "host_names": [],
+  "trusted_keys": {
+    "k_0000000000000000": "COLE_AQUI_A_CHAVE_PUBLICA_GERADA_NO_PC"
+  },
+  "models": {
+    "qwen_edge": {
+      "provider": "ollama",
+      "model": "qwen3.5:9b",
+      "base_url": "http://127.0.0.1:11434",
+      "options": {"num_thread": 8},
+      "keep_alive": "30m"
+    }
+  },
+  "limits": {
+    "max_input_chars": 60000,
+    "max_output_tokens": 4096,
+    "max_timeout_ms": 900000,
+    "max_context_tokens": 32768,
+    "max_queue": 8,
+    "result_ttl_seconds": 900,
+    "max_ticket_ttl_seconds": 600
+  },
+  "requests_per_minute": 300
+}

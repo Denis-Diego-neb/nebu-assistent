@@ -1,0 +1,4 @@
+# Somente o necessario para rodar o worker a partir do codigo-fonte no notebook.
+# uvicorn, starlette e httpx2 chegam como dependencias do SDK mcp.
+mcp>=2,<3
+cryptography>=50,<51
