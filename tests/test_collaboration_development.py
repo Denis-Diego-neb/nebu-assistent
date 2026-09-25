@@ -143,7 +143,7 @@ class WorkspaceTests(unittest.TestCase):
             with patch.object(remote_server, '_COLABORACAO', {'api':None,'tentado_em':0.0}), \
                  patch.object(remote_server, '_COLABORACAO_PROJETOS', {}), \
                  patch.object(remote_server.STATE, 'selected_project', str(first)), \
-                 patch.object(remote_server, 'liberar_rodadas_orfas') as recover:
+                 patch.object(remote_server, '_SERVINDO_PAINEL', True),                  patch.object(remote_server, 'liberar_rodadas_orfas') as recover:
                 one = remote_server.colaboracao()
                 self.assertEqual(one.store.root, first)
                 one.store.create_idea('Somente no primeiro')

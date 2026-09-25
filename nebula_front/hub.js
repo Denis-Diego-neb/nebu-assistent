@@ -254,7 +254,19 @@
     try {
       const resposta = await fetch('/hub/terminal', { cache: 'no-store' });
       if (!resposta.ok) return;
-      sessoes = (await resposta.json()).sessions || [];
+      const dados = await resposta.json();
+      sessoes = dados.sessions || [];
+      // Desligado por padrão (MCP GOAL, INV-003): o console diz como ligar em vez
+      // de deixar alguém descobrir pelo erro.
+      const politica = dados.policy || {};
+      const ligado = Boolean(politica.enabled);
+      $('terminal-command').disabled = !ligado;
+      $('terminal-cwd').disabled = !ligado;
+      $('terminal-form').querySelector('button[type="submit"]').disabled = !ligado;
+      $('terminal-status').textContent = ligado
+        ? `Ligado em ${(politica.folders || []).join(', ')} · tempo limite ${politica.timeout_s} s · tudo auditado.`
+        : `Terminal desligado por política (MCP GOAL, INV-003). Para ligar, crie ${politica.file || 'terminal_policy.json'} ` +
+          'no notebook com "habilitado": true e as pastas permitidas.';
       if (sessaoAtiva && !sessoes.some(s => s.id === sessaoAtiva)) selecionar(null);
       else desenharAbas();
     } catch { /* o indicador de estado já avisa se o hub caiu */ }

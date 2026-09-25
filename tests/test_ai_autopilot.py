@@ -1,10 +1,12 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from ai_sprints.autopilot import (
+    Job,
     _approved,
     _agent_circuit_open,
     _codex_fallback_response,
@@ -13,6 +15,8 @@ from ai_sprints.autopilot import (
     _parse_supervisor_guidance,
     _remove_orphan_worktree_directory,
     _reviewer_thinking_enabled,
+    _retry_needs_local_circuit,
+    run_tests,
     validate_patch,
 )
 from ai_sprints.orchestrator import compact_evidence, valid_review
@@ -31,6 +35,28 @@ index 0000000..1111111
 
 
 class AutopilotSafetyTests(unittest.TestCase):
+    def test_limite_do_codex_nao_bloqueia_qwen_local(self) -> None:
+        with patch.dict(os.environ, {"NEBULA_CODEX_FALLBACK": "1"}):
+            self.assertFalse(_retry_needs_local_circuit({
+                "status": "blocked_agents",
+                "error": "ReserveAgentUnavailable: Codex Terra indisponivel: usageLimitExceeded",
+            }, True))
+            self.assertTrue(_retry_needs_local_circuit({
+                "status": "blocked_agents", "error": "Qwen worker offline",
+            }, True))
+
+    def test_testes_usam_configuracao_local_isolada(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            worktree = Path(temporary)
+            job = Job("job", worktree / "candidate.json", frozenset({"x.py"}),
+                      (("{python}", "-c", "print('ok')"),), 30)
+            with patch("ai_sprints.autopilot.subprocess.run",
+                       return_value=Mock(returncode=0, stdout="ok", stderr="")) as runner:
+                run_tests(job, worktree)
+            local_appdata = Path(runner.call_args.kwargs["env"]["LOCALAPPDATA"])
+            self.assertNotEqual(local_appdata, Path(os.environ.get("LOCALAPPDATA", "")))
+            self.assertFalse(local_appdata.exists())
+
     def test_circuit_breaker_persiste_falha_do_agente(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             state = Path(temporary) / "state.json"

@@ -762,6 +762,9 @@
   }
 
   function pintarLinhas(alvo, linhas, vazio) {
+    // Meça antes de substituir: a remoção dos filhos pode zerar scrollTop.
+    const posicao = alvo.scrollTop;
+    const seguir = alvo.scrollHeight - posicao - alvo.clientHeight <= 40;
     alvo.replaceChildren();
     for (const item of linhas) alvo.append(item);
     if (!linhas.length) {
@@ -770,7 +773,7 @@
       nada.textContent = vazio;
       alvo.append(nada);
     }
-    alvo.scrollTop = alvo.scrollHeight;
+    alvo.scrollTop = seguir ? alvo.scrollHeight : posicao;
   }
 
   // Uma das duas pode esbarrar no limite de crédito no meio de uma seção. Aqui

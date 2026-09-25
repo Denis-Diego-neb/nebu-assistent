@@ -52,6 +52,25 @@ def snapshot(root: Path):
             "threads": game_threads(games) if games else (__import__('psutil').cpu_count(logical=False) or 2)}
 
 
+def _config(nome: str) -> str:
+    """Do ambiente ou, no Windows, das variaveis do usuario no registro.
+
+    O watcher e reiniciado por shells que nasceram antes da variavel existir;
+    sem o registro, ele deixava de reportar e o hub mostrava "sem atualizacao
+    do PC" enquanto as sprints seguiam normalmente.
+    """
+    valor = os.getenv(nome, "").strip()
+    if valor or os.name != "nt":
+        return valor
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as chave:
+            return str(winreg.QueryValueEx(chave, nome)[0]).strip()
+    except OSError:
+        return ""
+
+
 class HubReporter:
     def __init__(self, root, set_paused):
         self.root, self.set_paused = root, set_paused
@@ -59,8 +78,8 @@ class HubReporter:
         self.thread = None
 
     def __enter__(self):
-        url = os.getenv("NEBULA_SPRINT_HUB_URL", "").rstrip("/")
-        token = os.getenv("NEBULA_POWER_TOKEN", "")
+        url = _config("NEBULA_SPRINT_HUB_URL").rstrip("/")
+        token = _config("NEBULA_POWER_TOKEN")
         if not url or not token:
             return self
         def run():

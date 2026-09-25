@@ -84,9 +84,14 @@ class RecoveryTests(unittest.TestCase):
             self.assertEqual(state["status"], "rejected")
             self.assertEqual(state["summary"], "Falta contrato.")
             board = SprintScoreboard(root)._load()
-            self.assertEqual(board["agents"]["worker_4b"]["score"], 2)
-            self.assertEqual(board["agents"]["worker_4b"]["reviews"], 1)
-            self.assertEqual(next(iter(board["sprints"].values()))["blocking_findings"], ["Rever contrato."])
+            entry = next(iter(board["sprints"].values()))
+            self.assertEqual(len(board["sprints"]), 1)
+            self.assertEqual(entry["blocking_findings"], ["Rever contrato."])
+            # Patch e revisao salvos, sem origem conhecida: a nota fica gravada
+            # mas nao soma para nenhum Qwen (antes somava trabalho do Codex).
+            self.assertEqual(entry["sources"], {"worker_4b": "cached", "reviewer_9b": "qwen_9b_saved"})
+            self.assertEqual(entry["scored"], [])
+            self.assertEqual(board["agents"]["worker_4b"], {**board["agents"]["worker_4b"], "score": 0, "reviews": 0})
 
     def test_game_limits_local_inference_but_not_remote(self):
         with patch("ai_sprints.game_pacing.active_games", return_value=["acs.exe"]), \

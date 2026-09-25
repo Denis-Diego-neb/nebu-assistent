@@ -1,18 +1,19 @@
-# Nebula ↔ Brave ↔ Gemini Web — ponte local 0.3
+# Nebula ↔ Brave ↔ Gemini Web — ponte local 0.4
 
-## Avaliacao automatica (21/09/2026)
+## Avaliacao automatica
 
 Recarregue a extensao existente no Brave e use **Iniciar avaliações automáticas**
-no popup. A ponte abre uma aba exclusiva por job, envia o prompt, aguarda JSON
-estavel e registra a resposta autenticada com fingerprint/hash. Depois fecha
-somente a aba que ela criou. Uma falha de interface, login ou timeout interrompe
-novos envios e preserva o job para inspecao. **Parar avaliações automáticas**
-interrompe novos envios; uma resposta ja pendente ainda pode ser registrada.
+uma vez no popup. A ponte abre uma aba dedicada do Gemini, reutiliza a mesma
+conversa para os proximos jobs, envia cada prompt, coleta o JSON da resposta nova
+e o registra imediatamente com fingerprint/hash. O modo continua ativo enquanto
+a extensao e a ponte local estiverem disponiveis. Uma falha de interface, login
+ou timeout interrompe novos envios e preserva o job para inspecao.
+**Parar avaliações automáticas** interrompe novos envios; uma resposta ja
+pendente ainda pode ser registrada. A aba dedicada permanece aberta.
 
 O modo manual descrito abaixo continua disponivel. Nenhuma permissao nova foi
 adicionada. A etapa automatica foi testada com APIs simuladas; a validacao real
-depende de recarregar/ativar a extensao no navegador do usuario. A primeira nota
-real desta rodada foi obtida e registrada por operacao assistida do navegador.
+depende de recarregar/ativar a extensao no navegador do usuario.
 
 ## O que esta etapa entrega
 
@@ -21,7 +22,7 @@ real desta rodada foi obtida e registrada por operacao assistida do navegador.
 - Gateway usa o contrato Gemini, incluindo `worker_4b` e `reviewer_9b`, com deltas inteiros entre -10 e +10.
 - Gravação atômica, bloqueio entre processos, conferência de fingerprint e hash do conteúdo e reenvio idempotente.
 - Extensão guarda job, rascunho e resultado pendente até confirmação do servidor.
-- O usuário copia o prompt, envia no Gemini e cola o JSON final no popup.
+- No modo manual, o usuário copia o prompt, envia no Gemini e cola o JSON final no popup.
 
 Os rewards ficam registrados no review e o autopilot os acumula no placar,
 inclusive em rejeicoes. A extensao nao faz commit, merge nem aplica o patch.
@@ -37,10 +38,11 @@ inclusive em rejeicoes. A extensao nao faz commit, merge nem aplica o patch.
 ```
 
 4. O servidor exibe um token. Cole-o no campo do popup e clique em **Conectar ponte**. O token fica apenas no armazenamento local da extensão, restrito aos contextos da extensão.
-5. Abra ou recarregue a aba autenticada do Gemini. Clique em **Atualizar / testar** no popup.
-6. Com um job disponível, clique em **Copiar prompt**, cole e envie no Gemini. Espere a resposta terminar.
-7. Cole somente o JSON completo no popup e clique em **Registrar resposta na Nebula**. Blocos ```json também são aceitos pelo parser.
-8. Execute novamente seu comando habitual do autopilot para consumir o resultado.
+5. No popup, clique em **Iniciar avaliações automáticas**. A extensão abre sua aba do Gemini quando houver um job. Entre na sua conta do Gemini nessa aba, se necessário.
+6. Deixe a ponte local em execução. A extensão envia o prompt, coleta o JSON e registra a resposta sem copiar e colar. O mesmo chat é usado nos jobs seguintes.
+7. Execute novamente seu comando habitual do autopilot para consumir o resultado.
+
+Para usar o modo manual, abra uma aba autenticada do Gemini, clique em **Atualizar / testar**, copie o prompt e envie-o. Cole o JSON completo no popup e clique em **Registrar resposta na Nebula**. Blocos de codigo JSON tambem sao aceitos pelo parser.
 
 O servidor permanece ativo enquanto esse terminal estiver aberto. Ctrl+C encerra. Por padrão, cada reinício gera um token novo; reconecte o popup. Opcionalmente use a variável `NEBULA_GEMINI_BRIDGE_TOKEN` com um token aleatório de pelo menos 32 caracteres. Não salve tokens no repositório.
 
@@ -62,7 +64,7 @@ O servidor permanece ativo enquanto esse terminal estiver aberto. Ctrl+C encerra
 node --test tests/gemini_extension.test.mjs
 ```
 
-Resultado nesta entrega: 12 testes HTTP/gateway e 5 testes do background passaram; sintaxe dos três scripts verificada. Os testes JavaScript usam APIs simuladas do navegador; não houve teste real no Brave/Gemini.
+Os testes JavaScript usam APIs simuladas do navegador. Recarregar a extensão e fazer uma rodada real no Brave/Gemini ainda é necessário para validar a interface atual do site.
 
 A suíte do autopilot usa o contrato atual `_parse_supervisor_guidance` e roda junto dos testes da ponte Gemini.
 

@@ -1,8 +1,10 @@
 from concurrent.futures import ThreadPoolExecutor
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from services.collaboration.api import CollaborationAPI
 from services.collaboration.store import CollaborationStore, Conflict, path_key, priority
@@ -83,6 +85,30 @@ class StoreTests(unittest.TestCase):
         self.assertIn("codex terminou", markdown)
         self.assertIn("opus terminou", markdown)
         self.assertEqual(markdown.count("· code_section"), 2)
+
+    def test_markdown_export_retries_windows_permission_error(self):
+        replace = os.replace
+        attempts = 0
+
+        def briefly_locked(source, destination):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise PermissionError(5, "Acesso negado")
+            replace(source, destination)
+
+        with patch("services.collaboration.store.os.replace", side_effect=briefly_locked):
+            self.store.message(self.idea, "user", "Evento após bloqueio")
+        self.assertEqual(attempts, 2)
+        self.assertIn("Evento após bloqueio", self.store.log_path.read_text(encoding="utf-8"))
+
+    def test_markdown_lock_does_not_report_committed_event_as_failed(self):
+        with patch.object(self.store, "export_markdown", side_effect=PermissionError(5, "Acesso negado")):
+            with self.assertLogs("services.collaboration.store", level="WARNING"):
+                self.store.message(self.idea, "user", "Evento confirmado")
+        self.assertEqual(self.store.snapshot()["messages"][-1]["data"]["text"], "Evento confirmado")
+        self.store.export_markdown()
+        self.assertIn("Evento confirmado", self.store.log_path.read_text(encoding="utf-8"))
 
     def test_foreground_confirmation_cannot_be_spoofed_by_user_api(self):
         api = CollaborationAPI(self.temp.name)

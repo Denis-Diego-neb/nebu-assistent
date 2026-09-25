@@ -21,8 +21,8 @@ class ScoreboardTests(unittest.TestCase):
     def test_acumula_rewards_e_ordenacao(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             board = SprintScoreboard(Path(temporary))
-            self.assertTrue(board.record(job_id="sprint_um", fingerprint="a", status="ready_for_human_review", review=review(4, 2)))
-            self.assertTrue(board.record(job_id="sprint_dois", fingerprint="b", status="rejected", review=review(-1, 3)))
+            self.assertTrue(board.record(worker_source="qwen_4b", reviewer_source="qwen_9b", job_id="sprint_um", fingerprint="a", status="ready_for_human_review", review=review(4, 2)))
+            self.assertTrue(board.record(worker_source="qwen_4b", reviewer_source="qwen_9b", job_id="sprint_dois", fingerprint="b", status="rejected", review=review(-1, 3)))
             self.assertEqual(board.ranking(), [
                 {"agent": "reviewer_9b", "score": 5, "reviews": 2, "last_sprint": "sprint_dois"},
                 {"agent": "worker_4b", "score": 3, "reviews": 2, "last_sprint": "sprint_dois"},
@@ -32,9 +32,24 @@ class ScoreboardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             board = SprintScoreboard(Path(temporary))
             payload = review(4, 2)
-            self.assertTrue(board.record(job_id="sprint_um", fingerprint="a", status="rejected", review=payload))
-            self.assertFalse(board.record(job_id="sprint_um", fingerprint="a", status="ready_for_human_review", review=payload))
+            self.assertTrue(board.record(worker_source="qwen_4b", reviewer_source="qwen_9b", job_id="sprint_um", fingerprint="a", status="rejected", review=payload))
+            self.assertFalse(board.record(worker_source="qwen_4b", reviewer_source="qwen_9b", job_id="sprint_um", fingerprint="a", status="ready_for_human_review", review=payload))
             self.assertEqual(board.ranking()[0]["reviews"], 1)
             with self.assertRaisesRegex(ValueError, "diferente"):
-                board.record(job_id="sprint_um", fingerprint="a", status="rejected", review=review(5, 2))
-            self.assertTrue(board.record(job_id="sprint_um", fingerprint="b", status="rejected", review=review(1, 1)))
+                board.record(worker_source="qwen_4b", reviewer_source="qwen_9b", job_id="sprint_um", fingerprint="a", status="rejected", review=review(5, 2))
+            self.assertTrue(board.record(worker_source="qwen_4b", reviewer_source="qwen_9b", job_id="sprint_um", fingerprint="b", status="rejected", review=review(1, 1)))
+
+    def test_feedback_mostra_motivos_recentes_do_proprio_agente(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            board = SprintScoreboard(Path(temporary))
+            first = review(-4, 2)
+            first["rewards"]["worker_4b"]["reason"] = "Patch truncado."
+            board.record(worker_source="qwen_4b", reviewer_source="qwen_9b", job_id="sprint_um", fingerprint="a", status="rejected", review=first)
+            second = review(7, -3)
+            second["rewards"]["worker_4b"]["reason"] = "Testes cobertos."
+            board.record(worker_source="qwen_4b", reviewer_source="qwen_9b", job_id="sprint_dois", fingerprint="b", status="ready_for_human_review", review=second)
+            feedback = board.feedback("worker_4b", limit=2)
+            self.assertEqual(feedback["score"], 3)
+            self.assertEqual([item["reason"] for item in feedback["recent"]],
+                             ["Testes cobertos.", "Patch truncado."])
+            self.assertNotIn("Revisao.", str(feedback))

@@ -56,3 +56,13 @@ Teste isolado, sem acionar o abajur:
 - `core/bootstrap.py` apenas injeta as funções do host nesses módulos. As tools
   ainda não migradas continuam no adaptador legado, com nomes conhecidos e
   frases fixas.
+
+## Quarta etapa: mídia
+
+- `modules/desktop/media.py` registra `pausar_midia`, `continuar_midia`,
+  `aumentar_volume` e `diminuir_volume` por callbacks tipados. Saíram do
+  adaptador de frases fixas de `core/legacy_actions.py`.
+- O host expõe `_pausar_midia`, `_continuar_midia` e `_ajustar_volume_midia`;
+  o parser de voz usa esses mesmos métodos, então há uma única implementação.
+- Volume sem janela do YouTube aberta agora devolve `ok: false` pela tool (antes
+  o adaptador legado respondia sucesso mesmo sem ajustar nada).

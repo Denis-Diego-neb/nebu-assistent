@@ -26,6 +26,7 @@ import subprocess
 import tempfile
 
 import memoria_dupla
+import uso_ias
 from services.collaboration.providers import (
     CLIProvider, executable, parse_claude, parse_codex,
 )
@@ -89,6 +90,14 @@ def motivo(saida: str, erro: str) -> str:
     return ultima[-1][:600] if ultima else "o CLI terminou sem explicar o motivo."
 
 
+def linha_de_uso() -> str:
+    """Quanto resta de cada uma, para dividirem o trabalho sabendo disso."""
+    try:
+        return uso_ias.resumo_para_agentes(uso_ias.uso()) + chr(10)
+    except Exception:
+        return ""
+
+
 class ProvedorComAcesso(CLIProvider):
     """Mesmos CLIs, mesma leitura de resposta, com ferramentas ligadas.
 
@@ -112,6 +121,10 @@ class ProvedorComAcesso(CLIProvider):
         except Exception:
             return ""
 
+    def develop(self, agent, prompt, cwd, **kwargs):
+        # O modo de desenvolvimento é do Codex; aqui só entra a linha de uso.
+        return super().develop(agent, linha_de_uso() + prompt, cwd, **kwargs)
+
     def complete(self, agent, prompt, schema, cwd):
         comando = executable(agent)
         if not comando:
@@ -120,7 +133,7 @@ class ProvedorComAcesso(CLIProvider):
                            "opus" if agent == "opus" else "configured")
         raiz = str(Path(cwd).resolve())
         recuperada = self.memoria(agent)
-        texto = AUTORIZACAO.format(raiz=raiz)
+        texto = AUTORIZACAO.format(raiz=raiz) + linha_de_uso()
         if recuperada:
             texto += recuperada + RODAPE_MEMORIA
         texto += prompt
@@ -139,7 +152,14 @@ class ProvedorComAcesso(CLIProvider):
             else:
                 argumentos = [comando, "--print", "--output-format", "json",
                               "--model", modelo, "--json-schema", json.dumps(schema),
-                              "--tools", FERRAMENTAS_CLAUDE, "--add-dir", raiz,
+                              "--tools", FERRAMENTAS_CLAUDE,
+                              # --tools so diz quais ferramentas EXISTEM. Com
+                              # --permission-mode dontAsk, toda ferramenta que
+                              # pediria permissao e negada em silencio, entao sem
+                              # esta pre-aprovacao Bash, Edit e Write ficavam
+                              # bloqueados e o "acesso total" era so leitura.
+                              "--allowedTools", FERRAMENTAS_CLAUDE,
+                              "--add-dir", raiz,
                               "--strict-mcp-config", "--no-session-persistence",
                               "--permission-mode", "dontAsk"]
             resultado = subprocess.run(
@@ -152,7 +172,10 @@ class ProvedorComAcesso(CLIProvider):
                 if self.store is not None:
                     memoria_dupla.anotar_falta_de_cota(self.store, agent, explicacao)
                 raise RuntimeError(f"{agent}: {explicacao}")
-        return (parse_codex(resultado.stdout, modelo) if agent == "codex"
+        # Sem --model o Codex usa o do config.toml e só informaria "configured";
+        # guardar o modelo de verdade é o que deixa o chat mostrar quem respondeu.
+        exibir = modelo if modelo != "configured" else (uso_ias.modelo_codex().get("texto") or modelo)
+        return (parse_codex(resultado.stdout, exibir) if agent == "codex"
                 else parse_claude(resultado.stdout, modelo))
 
 

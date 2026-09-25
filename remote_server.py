@@ -32,6 +32,7 @@ from beamng_turbo import SENSOR as BEAMNG_TURBO
 from rocket_overlay import OVERLAY_BRIDGE
 from transfer_chat import CHAT_STORE, MAX_FILE_BYTES
 import front_assets
+import uso_ias
 
 PORTA = 8765
 PROJETO = (
@@ -194,6 +195,11 @@ def get_dark_mode() -> bool:
 
 def add_conversation_message(author: str, text: str) -> None:
     with STATE.lock:
+        ultima = STATE.conversation[-1] if STATE.conversation else None
+        # Aviso de estado repetido (a cada arranque vinha outro "Nebula pronta")
+        # so poluia o chat: o mesmo aviso seguido do Sistema entra uma vez.
+        if author == "Sistema" and ultima and ultima.get("author") == author and ultima.get("text") == text:
+            return
         STATE.conversation.append({
             "id": uuid.uuid4().hex,
             "author": author,
@@ -295,11 +301,43 @@ def discover_projects() -> list[dict[str, str]]:
         collect(data)
     except (OSError, ValueError):
         pass
-    valid = {
-        path.resolve() for path in paths
-        if path.is_dir() and "AppData\\Local\\Temp" not in str(path)
-    }
-    return [{"name": path.name or str(path), "path": str(path)} for path in sorted(valid, key=lambda p: (p.name.lower(), str(p).lower()))]
+    # storage.json so guarda as janelas abertas. Cada pasta ja aberta no VS Code
+    # tem um diretorio em workspaceStorage apontando para ela; a data dele diz
+    # quando foi usada, e e isso que ordena a lista pelo uso. Pastas apagadas,
+    # temporarias e do Windows ficam de fora.
+    usado_em: dict[Path, float] = {}
+    base = Path(os.environ.get("APPDATA", "")) / "Code" / "User" / "workspaceStorage"
+    try:
+        pastas = list(base.iterdir()) if base.is_dir() else []
+    except OSError:
+        pastas = []
+    for pasta in pastas:
+        try:
+            uri = json.loads((pasta / "workspace.json").read_text(encoding="utf-8")).get("folder", "")
+            if not isinstance(uri, str) or not uri.startswith("file:///"):
+                continue
+            caminho = Path(unquote(urlparse(uri).path.lstrip("/")))
+            quando = max((item.stat().st_mtime for item in pasta.iterdir()), default=pasta.stat().st_mtime)
+        except (OSError, ValueError):
+            continue
+        paths.add(caminho)
+        usado_em[caminho] = max(usado_em.get(caminho, 0.0), quando)
+    sistema = Path(os.environ.get("SystemRoot", "C:\\Windows")).resolve()
+    valid: dict[Path, float] = {}
+    for path in paths:
+        try:
+            if not path.is_dir() or "AppData\\Local\\Temp" in str(path):
+                continue
+            resolvido = path.resolve()
+        except OSError:
+            continue
+        if resolvido == sistema or sistema in resolvido.parents:
+            continue
+        valid[resolvido] = max(valid.get(resolvido, 0.0), usado_em.get(path, 0.0))
+    # Usado por ultimo primeiro; o que nunca teve data vai para o fim, em ordem alfabetica.
+    ordenados = sorted(valid.items(), key=lambda item: (-item[1], item[0].name.lower(), str(item[0]).lower()))
+    return [{"name": path.name or str(path), "path": str(path), "git": (path / ".git").exists(),
+             "used_at": quando or None} for path, quando in ordenados]
 
 
 def render_html() -> str:
@@ -427,10 +465,39 @@ def raiz_colaboracao() -> Path:
 _COLABORACAO: dict[str, object] = {"api": None, "tentado_em": 0.0}
 _COLABORACAO_PROJETOS: dict[str, object] = {}
 _COLABORACAO_LOCK = threading.RLock()
+# Todo pedido novo nasce com o maximo que o backend aceita por agente: o Denis
+# nao quer ter de pedir orcamento. O limite real e o de cada provedor.
+ORCAMENTO_MAXIMO = 2_000_000
+
+
+def esquecer_colaboracao() -> None:
+    """Zera o cache das instancias por projeto; usado nos testes."""
+    with _COLABORACAO_LOCK:
+        _COLABORACAO.update(api=None, tentado_em=0.0)
+        _COLABORACAO.pop("tentado_projeto", None)
+        _COLABORACAO_PROJETOS.clear()
 COLABORACAO_AUSENTE = (
     "O painel de colaboracao ainda nao esta disponivel. O backend e mantido pelo "
     "Codex em services/collaboration/; assim que a API existir, o painel liga sozinho."
 )
+
+
+# So o processo que serve o painel e dono das rodadas da Dupla. Qualquer outro
+# que abra a Dupla no mesmo projeto (a suite de testes, o autopilot, um script)
+# enxergava a rodada viva da Nebula como "orfa", matava o CLI no meio (codex
+# encerrou com codigo 15) e encerrava a conversa com "a Nebula reiniciou".
+_SERVINDO_PAINEL = False
+ARQUIVO_DONO = "dono_das_rodadas.json"
+
+
+def _processo_vivo(registro) -> bool:
+    import psutil
+
+    try:
+        processo = psutil.Process(int(registro["pid"]))
+        return abs(processo.create_time() - float(registro["criado"])) < 0.01
+    except (psutil.Error, KeyError, TypeError, ValueError):
+        return False
 
 
 def liberar_rodadas_orfas(api) -> None:
@@ -440,7 +507,19 @@ def liberar_rodadas_orfas(api) -> None:
     a Nebula. Sem isto, o painel fica para sempre em "as duas estao respondendo"
     e recusa toda rodada nova, sem nenhum botao que resolva - e de fora de casa,
     pelo celular, nao ha como abrir o banco na mao.
+
+    Orfa e so a rodada cujo dono morreu. Com o dono vivo (outra Nebula, ou esta
+    mesma reabrindo o projeto), nao se mexe em nada.
     """
+    import psutil
+
+    arquivo = Path(api.store.directory) / ARQUIVO_DONO
+    try:
+        dono = json.loads(arquivo.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        dono = None
+    if isinstance(dono, dict) and _processo_vivo(dono):
+        return
     try:
         estado = api.store.snapshot()
     except Exception:
@@ -471,6 +550,79 @@ def liberar_rodadas_orfas(api) -> None:
             api.store.end_run(identificador, "failed")
         except Exception:
             pass
+    try:
+        eu = psutil.Process()
+        arquivo.parent.mkdir(parents=True, exist_ok=True)
+        temporario = arquivo.with_suffix(".tmp")
+        temporario.write_text(json.dumps({"pid": eu.pid, "criado": eu.create_time()}),
+                              encoding="utf-8")
+        os.replace(temporario, arquivo)
+    except OSError:
+        pass
+
+
+def token_ponte_gemini() -> str:
+    """Token da ponte do Gemini: do ambiente ou, no Windows, do registro do usuario.
+
+    A Nebula costuma ser aberta por processos que nasceram antes de o token ser
+    gravado, e ai a variavel nao esta no ambiente dela. O registro do usuario e a
+    fonte que nao envelhece.
+    """
+    valor = os.environ.get("NEBULA_GEMINI_BRIDGE_TOKEN", "").strip()
+    if valor or os.name != "nt":
+        return valor
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as chave:
+            return str(winreg.QueryValueEx(chave, "NEBULA_GEMINI_BRIDGE_TOKEN")[0]).strip()
+    except OSError:
+        return ""
+
+
+TIPOS_DA_CONVERSA = ("user_message", "chat_reply", "chat_error", "confirmation")
+
+
+def conversa_dupla(estado: dict, depois: int, ideia_conhecida: str) -> dict:
+    """So o que o chat do celular precisa, a partir de um cursor.
+
+    O snapshot inteiro tem centenas de KB; buscado a cada 3 s pelo 4G daria
+    mais de 300 MB por hora de chat aberto. Aqui vai apenas o que e novo na
+    conversa atual. A conversa atual e o pedido mais recente, a mesma regra do
+    painel do PC, para as duas telas mostrarem a mesma coisa.
+    """
+    ideias = estado.get("ideas") or []
+    ideia = ideias[-1] if ideias else None
+    ideia_id = ideia["id"] if ideia else None
+    # Pedido novo desde a ultima consulta: o celular recomeca do zero.
+    recomecar = ideia_id != (ideia_conhecida or None)
+    if recomecar:
+        depois = 0
+    mensagens, cursor = [], depois
+    for evento in estado.get("messages") or []:
+        seq = int(evento.get("seq") or 0)
+        cursor = max(cursor, seq)
+        if seq <= depois or evento.get("idea") != ideia_id:
+            continue
+        if evento.get("kind") not in TIPOS_DA_CONVERSA:
+            continue
+        dados = evento.get("data") or {}
+        texto = dados.get("text")
+        if not texto:
+            continue
+        mensagens.append({
+            "seq": seq, "em": evento.get("at"), "autor": evento.get("actor"),
+            "tipo": evento.get("kind"), "texto": texto, "modelo": dados.get("model"),
+        })
+    return {
+        "ideia": {"id": ideia_id, "texto": ideia["text"]} if ideia else None,
+        "recomecar": recomecar,
+        "respondendo": bool(estado.get("active_chat")),
+        # "development" quando as duas estao implementando: o celular mostra Parar.
+        "modo": (estado.get("active_chat") or {}).get("mode") or ("conversa" if estado.get("active_chat") else None),
+        "cursor": cursor,
+        "mensagens": mensagens,
+    }
 
 
 def colaboracao():
@@ -527,7 +679,8 @@ def _colaboracao_do_projeto():
             # O store so existe depois da API: e dele que sai a memoria
             # comprimida entregue a quem voltou de um corte de cota.
             provedor.store = api.store
-        liberar_rodadas_orfas(api)
+        if _SERVINDO_PAINEL:
+            liberar_rodadas_orfas(api)
     except Exception:
         return None
     _COLABORACAO["api"] = api
@@ -646,6 +799,16 @@ class Handler(BaseHTTPRequestHandler):
         api = colaboracao()
         if api is None:
             self.json_response(503, {"error": COLABORACAO_AUSENTE, "aguardando_backend": True}); return
+        if metodo == "POST" and isinstance(corpo, dict):
+            corpo = dict(corpo)
+            if caminho in ("/api/collaboration/ideas", "/api/collaboration/develop"):
+                corpo["token_budget"] = ORCAMENTO_MAXIMO
+            elif caminho == "/api/collaboration/chat" and not corpo.get("idea_id") and hasattr(api, "store"):
+                # O backend criaria o pedido com o padrao de 60 mil; nasce no maximo.
+                try:
+                    corpo["idea_id"] = api.store.create_idea(corpo.get("text"), ORCAMENTO_MAXIMO)["id"]
+                except (ValueError, TypeError) as exc:
+                    self.json_response(400, {"error": str(exc)}); return
         try:
             status, payload = api.handle(metodo, caminho, corpo)
         except Exception as exc:
@@ -712,6 +875,43 @@ class Handler(BaseHTTPRequestHandler):
             body = SERVICE_WORKER.encode(); self.send_response(200); self.send_header("Content-Type", "application/javascript; charset=utf-8"); self.send_header("Service-Worker-Allowed", "/"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body); return
         if parsed.path in ("/icon-192.png", "/icon-512.png"):
             body = make_icon(192 if "192" in parsed.path else 512); self.send_response(200); self.send_header("Content-Type", "image/png"); self.send_header("Cache-Control", "public, max-age=86400"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body); return
+        if parsed.path == "/api/dupla/uso":
+            # Limites reais das duas IAs para o painel do celular. O token do Claude
+            # fica neste processo; sai daqui so a porcentagem.
+            if not self.authorized(): self.json_response(401, {"error": "Não autorizado"}); return
+            try:
+                api = colaboracao()
+                estado = api.store.snapshot() if api is not None and hasattr(api, "store") else {}
+            except Exception:
+                estado = {}
+            self.json_response(200, uso_ias.uso(estado)); return
+        if parsed.path == "/api/gemini/ponte":
+            # Para copiar o token da configuracao do celular: mesma autenticacao
+            # de qualquer outro comando, e so por ela.
+            if not self.authorized(): self.json_response(401, {"error": "Não autorizado"}); return
+            token = token_ponte_gemini()
+            self.json_response(200, {
+                "definido": bool(token), "token": token or None,
+                "porta": int(os.environ.get("NEBULA_GEMINI_BRIDGE_PORT", "8767")),
+            }); return
+        if parsed.path == "/api/dupla/conversa":
+            if not self.authorized(): self.json_response(401, {"error": "Não autorizado"}); return
+            api = colaboracao()
+            if api is None:
+                self.json_response(503, {"error": COLABORACAO_AUSENTE}); return
+            consulta = parse_qs(parsed.query)
+            try:
+                depois = max(0, int(consulta.get("depois", ["0"])[0] or 0))
+            except ValueError:
+                depois = 0
+            ideia = consulta.get("ideia", [""])[0]
+            resposta = conversa_dupla(api.store.snapshot(), depois, ideia)
+            raiz_projeto = Path(api.store.root)
+            resposta["projeto"] = {"caminho": str(raiz_projeto), "nome": raiz_projeto.name or str(raiz_projeto),
+                                   "git": (raiz_projeto / ".git").exists()}
+            # O nome da parceira segue o modelo configurado no Codex (Astra, Sol...).
+            resposta["nomes"] = {"opus": "Claude", "codex": uso_ias.modelo_codex()["nome"]}
+            self.json_response(200, resposta); return
         if parsed.path == "/api/collaboration" or parsed.path.startswith("/api/collaboration/"):
             if not self.authorized(): self.json_response(401, {"error": "Não autorizado"}); return
             self.servir_colaboracao("GET", parsed.path, {}); return
@@ -1143,6 +1343,8 @@ def start_server(
             "cair no serviço errado. Verifique com "
             f"'Get-NetTCPConnection -LocalPort {PORTA} -State Listen'."
         ) from erro
+    global _SERVINDO_PAINEL
+    _SERVINDO_PAINEL = True
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server
 

@@ -51,3 +51,26 @@ class SprintHubTests(unittest.TestCase):
             self.assertEqual(result["evaluated"], 0)
             self.assertEqual(result["recent"], [])
             self.assertIn("aguardando Gemini", result["alerts"][0])
+
+
+class ConfiguracaoDoReporterTests(unittest.TestCase):
+    """Watcher reiniciado por um shell antigo parava de reportar ao hub."""
+
+    def test_sem_variavel_no_ambiente_le_do_registro_do_usuario(self):
+        import os
+        from ai_sprints import hub_report
+
+        if os.name != "nt":
+            self.skipTest("registro so existe no Windows")
+        with patch.dict(os.environ, {"NEBULA_SPRINT_HUB_URL": ""}), \
+                patch("winreg.QueryValueEx", return_value=("http://hub:8766", 1)), \
+                patch("winreg.OpenKey") as abrir:
+            abrir.return_value.__enter__.return_value = object()
+            self.assertEqual(hub_report._config("NEBULA_SPRINT_HUB_URL"), "http://hub:8766")
+
+    def test_ambiente_tem_prioridade(self):
+        import os
+        from ai_sprints import hub_report
+
+        with patch.dict(os.environ, {"NEBULA_SPRINT_HUB_URL": "http://env:1"}):
+            self.assertEqual(hub_report._config("NEBULA_SPRINT_HUB_URL"), "http://env:1")

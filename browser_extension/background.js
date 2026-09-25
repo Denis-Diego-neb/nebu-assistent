@@ -17,7 +17,11 @@ async function bridge(state, path, payload) {
     });
     if (response.status === 204) return null;
     const body = await response.json();
-    if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
+    if (!response.ok) {
+        const error = new Error(body.error || `HTTP ${response.status}`);
+        error.status = response.status;
+        throw error;
+    }
     return body;
 }
 async function sendToGemini(tab, message) {
@@ -45,26 +49,37 @@ async function poll() {
             state.pending = null;
             state.draft = '';
             state.error = '';
-            if (state.autoTabId) {
-                await chrome.tabs.remove(state.autoTabId).catch(() => {});
-                state.autoTabId = null;
-            }
+            state.autoFailures = 0;
+            state.autoStartedAt = null;
+            state.autoSubmitted = false;
             await save(state);
         }
-        const tabs = await chrome.tabs.query({url: ['https://gemini.google.com/*']});
-        const tab = tabs.find(t => t.active) || tabs[0];
-        if (!tab) throw new Error('Abra uma aba do Gemini.');
-        const ping = await sendToGemini(tab, {type: 'NEBULA_PING'});
-        if (!ping?.ok) throw new Error('Recarregue a aba do Gemini.');
-        if (!state.job) {
-            state.job = await bridge(state, '/gemini/next');
-            if (state.job) {
-                state.draft = '';
-                // Persiste antes da entrega: suspensao do worker nao perde o job.
-                await save(state);
+        if (state.auto) {
+            if (!state.job) {
+                state.job = await bridge(state, '/gemini/next');
+                if (state.job) {
+                    state.draft = '';
+                    state.autoStartedAt = Date.now();
+                    state.autoSubmitted = false;
+                    await save(state);
+                }
             }
-        }
-        if (state.auto && state.job) {
+            if (!state.job) {
+                state.error = '';
+                state.autoFailures = 0;
+                await save(state);
+                return;
+            }
+            if (state.autoTabId) {
+                const tab = await chrome.tabs.get(state.autoTabId).catch(() => null);
+                const tabUrl = tab?.pendingUrl || tab?.url;
+                if (tab && !tabUrl) return;
+                if (!tab || !tabUrl.startsWith('https://gemini.google.com/')) {
+                    if (state.autoSubmitted) throw new Error('A aba do Gemini mudou durante a resposta. Confira o job antes de retomar.');
+                    state.autoTabId = null;
+                    await save(state);
+                }
+            }
             if (!state.autoTabId) {
                 const created = await chrome.tabs.create({url: 'https://gemini.google.com/app', active: false});
                 state.autoTabId = created.id;
@@ -79,22 +94,63 @@ async function poll() {
                 type: 'NEBULA_AUTO_STEP', job: {...identity(state.job), prompt: state.job.prompt}
             });
             if (result?.error) throw new Error(result.error);
+            if (result?.phase === 'submitted' || result?.phase === 'waiting' || result?.phase === 'settling') {
+                state.autoSubmitted = true;
+            }
             if (result?.response) {
                 state.pending = result.response;
                 state.draft = result.response;
+                await save(state);
+                await bridge(state, '/gemini/result', {...identity(state.job), response: state.pending});
+                state.job = null;
+                state.pending = null;
+                state.draft = '';
+                state.autoStartedAt = null;
+                state.autoSubmitted = false;
             }
             state.error = '';
+            state.autoFailures = 0;
             await save(state);
             return;
+        }
+        const tabs = await chrome.tabs.query({url: ['https://gemini.google.com/*']});
+        const tab = tabs.find(t => t.active) || tabs[0];
+        if (!tab) throw new Error('Abra uma aba do Gemini.');
+        const ping = await sendToGemini(tab, {type: 'NEBULA_PING'});
+        if (!ping?.ok) throw new Error('Recarregue a aba do Gemini.');
+        if (!state.job) {
+            state.job = await bridge(state, '/gemini/next');
+            if (state.job) {
+                state.draft = '';
+                // Persiste antes da entrega: suspensao do worker nao perde o job.
+                await save(state);
+            }
         }
         if (state.job) {
             const result = await sendToGemini(tab, {type: 'NEBULA_GEMINI_JOB', job: identity(state.job)});
             if (!result?.accepted) throw new Error('Aba do Gemini nao aceitou o job.');
         }
         state.error = '';
+        state.autoFailures = 0;
     } catch (error) {
         state.error = error.message;
-        if (state.auto) state.auto = false;
+        // 409/404 do /gemini/result: job com fingerprint velho ou ja respondido.
+        // Insistir nele para sempre travaria o automatico no mesmo job; descarta
+        // e deixa a proxima rodada buscar um job novo em /gemini/next.
+        if (error.status === 409 || error.status === 404) {
+            state.job = null;
+            state.pending = null;
+            state.draft = '';
+            state.autoTabId = null;
+            state.autoStartedAt = null;
+            state.autoSubmitted = false;
+        }
+        // Uma falha isolada (aba recarregando, Gemini lento, rede) nao pode
+        // desligar o automatico: com 41 jobs pendentes, cada erro passageiro
+        // interrompia a fila inteira ate alguem reabrir o popup e clicar de
+        // novo. So desliga depois de falhas seguidas, sem sucesso entre elas.
+        state.autoFailures = (state.autoFailures || 0) + 1;
+        if (state.auto && state.autoFailures >= 5) state.auto = false;
     }
     await save(state);
 }
@@ -130,7 +186,7 @@ async function handle(message, sender) {
         case 'AUTO':
             state.auto = Boolean(message.enabled);
             if (state.auto && !state.token) throw new Error('Configure a ponte primeiro.');
-            if (state.auto && !state.pending && !state.autoTabId) state.job = null;
+            if (state.auto && state.job && !state.autoStartedAt) state.autoStartedAt = Date.now();
             await save(state);
             await poll(); state = await read(); break;
         case 'DRAFT':
@@ -147,6 +203,8 @@ async function handle(message, sender) {
         case 'RESET':
             state.auto = false;
             state.autoTabId = null;
+            state.autoSubmitted = false;
+            state.autoStartedAt = null;
             state.job = null; state.pending = null; state.draft = ''; state.error = '';
             await save(state); break;
         default: throw new Error('Mensagem desconhecida.');

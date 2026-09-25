@@ -28,7 +28,22 @@ class TerminalDoHubTests(unittest.TestCase):
         cls.server.shutdown()
         cls.server.server_close()
 
+    def setUp(self) -> None:
+        # O terminal é desligado por padrão (MCP GOAL, INV-003); aqui uma política
+        # temporária o liga numa pasta de teste, como o Denis faria no notebook.
+        import tempfile
+        from pathlib import Path
+        self.pasta = Path(tempfile.mkdtemp(prefix="hub-term-"))
+        self.politica = self.pasta / "terminal_policy.json"
+        self.auditoria = self.pasta / "terminal_audit.jsonl"
+        self.politica.write_text(json.dumps({"habilitado": True, "pastas": [str(self.pasta)],
+                                             "tempo_limite_s": 600}), encoding="utf-8")
+        self.antes = (power_server.POLITICA_TERMINAL, power_server.AUDITORIA_TERMINAL)
+        power_server.POLITICA_TERMINAL = self.politica
+        power_server.AUDITORIA_TERMINAL = self.auditoria
+
     def tearDown(self) -> None:
+        power_server.POLITICA_TERMINAL, power_server.AUDITORIA_TERMINAL = self.antes
         for sessao in power_server.TERMINAIS.listar():
             if sessao["executando"]:
                 power_server.TERMINAIS.encerrar(sessao["id"])
@@ -123,6 +138,58 @@ class TerminalDoHubTests(unittest.TestCase):
         status, erro = self.postar("/hub/terminal", {"command": "   "})
         self.assertEqual(status, 400)
         self.assertIn("comando", erro["error"].casefold())
+
+    # ------------------------------------------------------------- política (INV-003)
+    def auditoria_lida(self):
+        if not self.auditoria.exists():
+            return []
+        return [json.loads(l) for l in self.auditoria.read_text(encoding="utf-8").splitlines() if l]
+
+    def test_sem_politica_o_terminal_fica_desligado_e_a_tentativa_e_auditada(self) -> None:
+        self.politica.unlink()
+        status, erro = self.postar("/hub/terminal", {"command": "python -V"})
+        self.assertEqual(status, 403)
+        self.assertIn("INV-003", erro["error"])
+        self.assertEqual(self.auditoria_lida()[-1]["evento"], "negado")
+
+    def test_politica_sem_habilitado_true_continua_desligada(self) -> None:
+        self.politica.write_text(json.dumps({"habilitado": "sim", "pastas": [str(self.pasta)]}), encoding="utf-8")
+        self.assertEqual(self.postar("/hub/terminal", {"command": "python -V"})[0], 403)
+
+    def test_pasta_fora_da_politica_e_recusada(self) -> None:
+        import tempfile
+        status, erro = self.postar("/hub/terminal", {"command": "python -V", "cwd": tempfile.gettempdir()})
+        self.assertEqual(status, 400)
+        self.assertIn("fora das permitidas", erro["error"])
+
+    def test_sem_pasta_roda_na_primeira_permitida(self) -> None:
+        _, sessao = self.postar("/hub/terminal", {"command": "python -V"})
+        self.assertEqual(sessao["cwd"], str(self.pasta.resolve()))
+
+    def test_tempo_limite_encerra_o_comando(self) -> None:
+        from unittest import mock
+        curta = {"habilitado": True, "pastas": [self.pasta.resolve()], "tempo_limite_s": 1}
+        with mock.patch.object(power_server, "politica_terminal", return_value=curta):
+            _, sessao = self.postar("/hub/terminal", {"command": 'python -c "import time; time.sleep(120)"'})
+        estado = self.esperar_fim(sessao["id"], limite=20)
+        self.assertIn("tempo limite", chr(10).join(estado["lines"]))
+        fim = [e for e in self.auditoria_lida() if e["evento"] == "fim"][-1]
+        self.assertTrue(fim["estourou_tempo"])
+
+    def test_auditoria_guarda_metadados_e_nao_o_comando(self) -> None:
+        """INV-007: o comando pode ter segredo; fica o hash, não o texto."""
+        _, sessao = self.postar("/hub/terminal", {"command": 'python -c "print(1)" segredo123'})
+        self.esperar_fim(sessao["id"])
+        bruto = self.auditoria.read_text(encoding="utf-8")
+        self.assertNotIn("segredo123", bruto)
+        inicio = [e for e in self.auditoria_lida() if e["evento"] == "inicio"][-1]
+        self.assertEqual(inicio["programa"], "python")
+        self.assertEqual(len(inicio["sha256"]), 64)
+
+    def test_listagem_mostra_a_politica(self) -> None:
+        _, lista = self.pegar("/hub/terminal")
+        self.assertTrue(lista["policy"]["enabled"])
+        self.assertEqual(lista["policy"]["folders"], [str(self.pasta.resolve())])
 
     def test_pasta_inexistente_e_recusada_antes_de_iniciar(self) -> None:
         status, erro = self.postar(

@@ -76,6 +76,13 @@ resposta Gemini valida, vinculada ao hash da sprint. Ele e idempotente:
 reprocessar o mesmo job nao soma pontos novamente. O ranking mede qualidade e
 nunca altera a aprovacao de um patch.
 
+Antes de cada nova tentativa, worker 4B e reviewer 9B recebem seu score e ate
+tres motivos recentes da revisao Gemini. Esse feedback entra como dado no prompt
+para orientar a proxima resposta; nao muda os pesos do modelo nem substitui os
+criterios do job, a validacao do patch ou os testes. As baterias de teste usam um
+`LOCALAPPDATA` temporario para impedir que testes no worktree leiam a configuracao
+da Nebula em uso e encerrem uma conversa real da Dupla.
+
 ### Retomada e acompanhamento (21/09/2026)
 
 O parecer Qwen e consultivo. Patches rejeitados localmente e falhas de patch/teste

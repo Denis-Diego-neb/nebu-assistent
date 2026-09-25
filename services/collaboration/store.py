@@ -5,14 +5,17 @@ from __future__ import annotations
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import json
+import logging
 import math
 import os
 from pathlib import Path, PurePosixPath
 import sqlite3
 import tempfile
+import time
 from uuid import uuid4
 
 AGENTS = ("codex", "opus")
+LOGGER = logging.getLogger(__name__)
 
 
 class _Connection(sqlite3.Connection):
@@ -104,7 +107,13 @@ class CollaborationStore:
             raise
         finally:
             conn.close()
-        self.export_markdown()
+        try:
+            self.export_markdown()
+        except PermissionError:
+            # O evento já foi confirmado no SQLite. Um leitor do Windows pode
+            # bloquear momentaneamente a troca do Markdown; a próxima exportação
+            # recompõe o diário a partir dos eventos, sem perder esta operação.
+            LOGGER.warning("Não foi possível atualizar SESSOES.md; o SQLite permanece atualizado.", exc_info=True)
 
     @staticmethod
     def event(conn, actor, kind, idea, data):
@@ -371,7 +380,14 @@ class CollaborationStore:
             try:
                 with os.fdopen(fd, "w", encoding="utf-8") as stream:
                     stream.write("\n".join(lines) + "\n")
-                os.replace(temporary, self.log_path)
+                for attempt in range(5):
+                    try:
+                        os.replace(temporary, self.log_path)
+                        break
+                    except PermissionError:
+                        if attempt == 4:
+                            raise
+                        time.sleep(0.05 * 2 ** attempt)
             finally:
                 Path(temporary).unlink(missing_ok=True)
             conn.commit()

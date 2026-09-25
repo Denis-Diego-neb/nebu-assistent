@@ -25,6 +25,7 @@ import android.os.Looper;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
@@ -111,8 +112,40 @@ public class MainActivity extends Activity {
     }
 
     private MobileDashboard dashboard;
+    /** Nebulosa nativa por trás da tela de PIN e do dashboard; criada uma vez. */
+    private NebulaSkyView ceu;
+    /** Chat da Dupla nativo, aberto a partir do dashboard. */
+    private NebulaChat chat;
+
+    private void abrirDupla() {
+        if (chat != null) chat.fechar();
+        chat = new NebulaChat(this, POWER_TOKEN, panelEndpoints().toArray(new String[0]), this::fecharDupla);
+        setContentView(sobreOCeu(chat.root));
+        chat.ativar(true);
+    }
+
+    private void fecharDupla() {
+        if (chat != null) chat.fechar();
+        chat = null;
+        buildUi();
+    }
+
+    /**
+     * Põe a tela por cima do céu. O mesmo céu é reaproveitado entre as telas:
+     * recriar o contexto de GL a cada troca pisca e gasta bateria.
+     */
+    private View sobreOCeu(View conteudo) {
+        if (ceu == null) ceu = new NebulaSkyView(this);
+        if (ceu.getParent() != null) ((ViewGroup) ceu.getParent()).removeView(ceu);
+        FrameLayout camadas = new FrameLayout(this);
+        camadas.setBackgroundColor(Color.BLACK);
+        camadas.addView(ceu, new FrameLayout.LayoutParams(-1, -1));
+        camadas.addView(conteudo, new FrameLayout.LayoutParams(-1, -1));
+        return camadas;
+    }
 
     private void buildUi() {
+        if (chat != null) { chat.fechar(); chat = null; }
         if (dashboard != null) dashboard.close();
         panelOpening = false;
         panelWebView = null;
@@ -122,62 +155,63 @@ public class MainActivity extends Activity {
             LinearLayout gate = new LinearLayout(this);
             gate.setOrientation(LinearLayout.VERTICAL);
             gate.setPadding(dp(24), dp(24), dp(24), dp(24));
-            gate.setBackground(background());
+            gate.setBackgroundColor(Color.TRANSPARENT);
             TextView brand = text("NEBULA", 22, Color.rgb(247, 241, 232), Typeface.BOLD);
             brand.setGravity(Gravity.START); brand.setLetterSpacing(.12f); gate.addView(brand);
-            TextView signature = text("SUA CASA. UM CONTROLE.", 10, Color.rgb(234, 211, 174), Typeface.BOLD);
+            TextView signature = Tema.destaque(text("SUA CASA. UM CONTROLE.", 10, Tema.TEXTO, Typeface.BOLD));
             signature.setGravity(Gravity.START); signature.setLetterSpacing(.08f); gate.addView(signature);
             gate.addView(new android.widget.Space(this), new LinearLayout.LayoutParams(1, 0, .55f));
 
             LinearLayout access = new LinearLayout(this); access.setOrientation(LinearLayout.VERTICAL);
             access.setGravity(Gravity.CENTER_HORIZONTAL); access.setPadding(dp(22), dp(22), dp(22), dp(22));
-            GradientDrawable accessShape = new GradientDrawable(); accessShape.setColor(Color.rgb(58, 59, 63));
-            accessShape.setCornerRadius(dp(10)); accessShape.setStroke(dp(1), Color.rgb(78, 78, 82));
-            access.setBackground(accessShape); access.setElevation(dp(10));
-            access.addView(new PulseView(this), new LinearLayout.LayoutParams(-1, dp(112)));
+            Tema.vidro(access, 18);
+            PulseView orbe = new PulseView(this);
+            Tema.seguir(orbe, (v, a) -> ((PulseView) v).colorir(a.botao));
+            access.addView(orbe, new LinearLayout.LayoutParams(-1, dp(112)));
             access.addView(text("Tudo à mão", 28, Color.rgb(247, 241, 232), Typeface.BOLD));
             status = text("Confirme o PIN do celular para entrar e autorizar o Windows do PC.", 15,
-                    Color.rgb(190, 181, 168), Typeface.NORMAL);
+                    Tema.SUAVE, Typeface.NORMAL);
             status.setPadding(dp(4), dp(8), dp(4), dp(22)); access.addView(status);
             powerButton = new Button(this);
             powerButton.setText("Entrar e ligar o PC");
-            powerButton.setTextColor(Color.rgb(43, 40, 35));
             powerButton.setTextSize(15); powerButton.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-            powerButton.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.rgb(234, 211, 174)));
-            powerButton.setStateListAnimator(null);
             powerButton.setAllCaps(false);
             powerButton.setOnClickListener(view -> requirePhoneCredential());
-            GradientDrawable powerShape = new GradientDrawable(); powerShape.setColor(Color.rgb(234, 211, 174));
-            powerShape.setCornerRadius(dp(10)); powerButton.setBackground(powerShape);
+            Tema.botao(powerButton, 12);
             access.addView(powerButton, new LinearLayout.LayoutParams(-1, dp(50)));
             gate.addView(access, new LinearLayout.LayoutParams(-1, -2));
             TextView privacy = text("Seu PIN permanece protegido pelo Android.", 11,
-                Color.rgb(150, 143, 134), Typeface.NORMAL); privacy.setPadding(0, dp(14), 0, 0); gate.addView(privacy);
+                Tema.SUAVE, Typeface.NORMAL); privacy.setPadding(0, dp(14), 0, 0); gate.addView(privacy);
             gate.addView(new android.widget.Space(this), new LinearLayout.LayoutParams(1, 0, 1f));
             panelButton = new Button(this); // Painel só fica disponível após o PIN.
-            setContentView(gate);
+            setContentView(sobreOCeu(gate));
             return;
         }
         dashboard = new MobileDashboard(this, POWER_TOKEN,
                 notebookEndpoints().toArray(new String[0]),
                 new String[]{PC_LAN_PANEL, PC_TAILSCALE_PANEL},
-            this::requirePhoneCredential, this::openPanelWhenReady);
+            this::requirePhoneCredential, this::openPanelWhenReady, this::abrirDupla);
         powerButton = dashboard.powerButton;
         panelButton = dashboard.espacoButton;
         status = dashboard.status;
-        setContentView(dashboard.root);
+        dashboard.root.setBackgroundColor(Color.TRANSPARENT);
+        setContentView(sobreOCeu(dashboard.root));
     }
 
     @Override
     protected void onPause() {
         super.onPause();
         if (dashboard != null) dashboard.setActive(false);
+        if (ceu != null) ceu.pausar();
+        if (chat != null) chat.ativar(false);
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         if (dashboard != null) dashboard.setActive(true);
+        if (ceu != null) ceu.retomar();
+        if (chat != null) chat.ativar(true);
     }
 
     @Override
@@ -311,10 +345,10 @@ public class MainActivity extends Activity {
 
     private void wakeSucceeded(String message) {
         setButtonState("NEBULA AUTORIZADA", message, false);
-        // Depois que o PIN autorizou o aparelho e o Hub respondeu, entre no
-        // Espaço automaticamente. É ali que ficam o tema de nebulosa e o chat
-        // Dupla; voltar pelo Android ainda retorna ao painel nativo.
-        openPanelWhenReady();
+        // Antes daqui o app entrava sozinho no painel web, porque era lá que
+        // ficavam a nebulosa e o chat da Dupla. Os dois agora são nativos, e o
+        // Denis não quer o painel web: ele só abre pelo menu, até o nativo ter
+        // tudo e a opção sair de vez.
     }
 
     private void openPanelWhenReady() {
@@ -519,6 +553,11 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
+        if (chat != null) {
+            fecharDupla();
+            return;
+        }
+        if (dashboard != null && dashboard.fecharMenuSeAberto()) return;
         if (panelFullscreen) {
             setPanelFullscreen(false);
             return;
@@ -561,11 +600,6 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** Endereco do Tailscale, na faixa 100.64/10 que ele usa para o tailnet. */
-    private static boolean viaTailscale(String endpoint) {
-        return endpoint != null && endpoint.contains("//100.");
-    }
-
     private void sendRelayWake(String endpoint, JSONObject unlockProof) throws Exception {
         HttpURLConnection connection = (HttpURLConnection) new URL(endpoint + "/wake").openConnection();
         try {
@@ -574,8 +608,8 @@ public class MainActivity extends Activity {
             // rele antes de existir, e 2,5 s nao cobriam isso longe de casa; na
             // LAN o limite curto continua, para nao fazer esperar a toa quando o
             // endereco simplesmente nao atende.
-            connection.setConnectTimeout(viaTailscale(endpoint) ? 9000 : 2500);
-            connection.setReadTimeout(viaTailscale(endpoint) ? 15000 : 5000);
+            connection.setConnectTimeout(Rede.viaTailscale(endpoint) ? 9000 : 2500);
+            connection.setReadTimeout(Rede.viaTailscale(endpoint) ? 15000 : 5000);
             connection.setRequestMethod("POST");
             connection.setRequestProperty("X-Nebula-Power-Token", POWER_TOKEN);
             connection.setRequestProperty("Content-Type", "application/json");
@@ -690,11 +724,18 @@ public class MainActivity extends Activity {
 
         PulseView(Context context) {
             super(context);
-            glow.setColor(Color.argb(42, 234, 211, 174));
+            colorir(Color.rgb(206, 196, 238));
+        }
+
+        /** O orbe acompanha a cor da nebulosa, como os botões. */
+        void colorir(int cor) {
+            glow.setColor(Color.argb(46, Color.red(cor), Color.green(cor), Color.blue(cor)));
+            int escura = Color.rgb(Color.red(cor) * 45 / 100, Color.green(cor) * 45 / 100, Color.blue(cor) * 45 / 100);
             core.setShader(new android.graphics.RadialGradient(
                     0, 0, 1,
-                    new int[]{Color.rgb(255, 244, 224), Color.rgb(234, 211, 174), Color.rgb(132, 106, 75)},
+                    new int[]{Color.rgb(250, 248, 255), cor, escura},
                     new float[]{0f, .55f, 1f}, android.graphics.Shader.TileMode.CLAMP));
+            invalidate();
         }
 
         @Override

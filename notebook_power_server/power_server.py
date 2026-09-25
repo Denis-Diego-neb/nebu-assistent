@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hmac
 import hashlib
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -691,6 +692,65 @@ def wake_nebula() -> dict[str, object]:
 UNIVERSAL = UniversalController(BRAIN, TVS, wake_nebula)
 
 
+POLITICA_TERMINAL = MONITOR_LOG_FILE.parent / "terminal_policy.json"
+AUDITORIA_TERMINAL = MONITOR_LOG_FILE.parent / "terminal_audit.jsonl"
+
+
+class TerminalDesligado(Exception):
+    """O terminal só existe quando uma política explícita o liga (MCP GOAL, INV-003)."""
+
+
+def politica_terminal() -> dict[str, object]:
+    """Lê a política do terminal. Sem arquivo, ou sem ``habilitado: true``, fica desligado.
+
+    O ``MCP GOAL.md`` proíbe shell remoto genérico por padrão (INV-003) e só o
+    admite desligado por padrão, ligado por política explícita, limitado a
+    pastas, com tempo limite e auditado. O arquivo fica no próprio notebook, e
+    ligar é um ato de quem está nele — não uma rota que alguém de fora aciona.
+    """
+    try:
+        dados = json.loads(POLITICA_TERMINAL.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        dados = {}
+    if not isinstance(dados, dict):
+        dados = {}
+    pastas = []
+    for bruto in dados.get("pastas") or []:
+        try:
+            pasta = Path(str(bruto)).expanduser().resolve()
+        except (OSError, ValueError):
+            continue
+        if pasta.is_dir():
+            pastas.append(pasta)
+    try:
+        limite = int(dados.get("tempo_limite_s", 1800))
+    except (TypeError, ValueError):
+        limite = 1800
+    limite = max(10, min(limite, 6 * 3600))
+    return {"habilitado": dados.get("habilitado") is True and bool(pastas),
+            "pastas": pastas, "tempo_limite_s": limite}
+
+
+def auditar_terminal(evento: dict[str, object]) -> None:
+    """Metadados apenas: programa, hash do comando, pasta, código e duração.
+
+    O texto do comando pode levar segredo (INV-007: o notebook registra
+    metadados, não conteúdo); o hash permite conferir depois sem guardá-lo.
+    """
+    registro = {"em": datetime.now(timezone.utc).isoformat(), **evento}
+    try:
+        AUDITORIA_TERMINAL.parent.mkdir(parents=True, exist_ok=True)
+        with AUDITORIA_TERMINAL.open("a", encoding="utf-8") as arquivo:
+            arquivo.write(json.dumps(registro, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+
+
+def _programa(texto: str) -> str:
+    primeiro = texto.strip().split()[0] if texto.strip() else ""
+    return Path(primeiro.strip('"\'')).name[:60]
+
+
 class Terminais:
     """Sessões de comando do hub: sprints e tarefas longas que rodam a fio.
 
@@ -708,12 +768,17 @@ class Terminais:
         self.lock = threading.Lock()
         self.sessoes: dict[str, dict[str, object]] = {}
 
-    def _raiz(self, cwd: object) -> Path:
+    def _raiz(self, cwd: object, pastas: list) -> Path:
         if not cwd:
-            return Path(sys.executable).resolve().parent
+            return pastas[0]
         caminho = Path(str(cwd)).expanduser()
         if not caminho.is_dir():
             raise ValueError(f"Pasta inexistente: {caminho}")
+        caminho = caminho.resolve()
+        # Limita a pasta de trabalho. Não é sandbox: o comando ainda alcança o
+        # que o usuário do Windows alcança; por isso também é auditado.
+        if not any(caminho == p or p in caminho.parents for p in pastas):
+            raise ValueError(f"Pasta fora das permitidas pela política: {caminho}")
         return caminho
 
     def abrir(self, comando: object, cwd: object = None, autor: object = "usuario") -> dict[str, object]:
@@ -722,7 +787,16 @@ class Terminais:
             raise ValueError("Informe um comando.")
         if len(texto) > 4000:
             raise ValueError("Comando longo demais.")
-        raiz = self._raiz(cwd)
+        politica = politica_terminal()
+        if not politica["habilitado"]:
+            auditar_terminal({"evento": "negado", "autor": str(autor or "usuario")[:40],
+                              "programa": _programa(texto), "motivo": "desligado"})
+            raise TerminalDesligado(
+                "Terminal desligado por política (MCP GOAL, INV-003). Para ligar, crie no notebook "
+                f"{POLITICA_TERMINAL} com {{\"habilitado\": true, \"pastas\": [\"C:\\\\caminho\"], "
+                "\"tempo_limite_s\": 1800}."
+            )
+        raiz = self._raiz(cwd, politica["pastas"])
         with self.lock:
             vivos = sum(1 for s in self.sessoes.values() if s["proc"].poll() is None)
             if vivos >= self.MAXIMO_VIVOS:
@@ -747,6 +821,8 @@ class Terminais:
             "autor": str(autor or "usuario")[:40], "proc": proc,
             "linhas": deque(maxlen=self.LINHAS_POR_SESSAO), "sequencia": 0,
             "inicio": time.time(), "fim": None, "codigo": None,
+            "estourou": False, "limite": politica["tempo_limite_s"],
+            "hash": hashlib.sha256(texto.encode("utf-8")).hexdigest(),
         }
         with self.lock:
             self.sessoes[ident] = sessao
@@ -756,9 +832,17 @@ class Terminais:
                 for antiga in sorted(mortas, key=lambda i: self.sessoes[i]["fim"])[
                         : len(self.sessoes) - self.MAXIMO_SESSOES]:
                     self.sessoes.pop(antiga, None)
+        relogio = threading.Timer(politica["tempo_limite_s"], self._estourar, args=(ident,))
+        relogio.daemon = True
+        sessao["relogio"] = relogio
+        relogio.start()
         threading.Thread(target=self._drenar, args=(sessao,),
                          name=f"terminal-{ident}", daemon=True).start()
-        MONITOR.record_event(f"Terminal {ident}: {texto[:90]} ({sessao['autor']}).")
+        auditar_terminal({"evento": "inicio", "id": ident, "autor": sessao["autor"],
+                          "programa": _programa(texto), "sha256": sessao["hash"],
+                          "tamanho": len(texto), "cwd": str(raiz), "limite_s": politica["tempo_limite_s"]})
+        # No log do monitor, só o programa: o comando inteiro pode ter segredo.
+        MONITOR.record_event(f"Terminal {ident}: {_programa(texto)} ({sessao['autor']}).")
         return self.resumo(ident)
 
     def _escrever(self, sessao: dict[str, object], linha: str) -> None:
@@ -779,11 +863,29 @@ class Terminais:
             except OSError:
                 pass
             codigo = proc.wait()
+            relogio = sessao.get("relogio")
+            if relogio is not None:
+                relogio.cancel()
             with self.lock:
                 sessao["fim"] = time.time()
                 sessao["codigo"] = codigo
+            auditar_terminal({"evento": "fim", "id": sessao["id"], "codigo": codigo,
+                              "segundos": round(sessao["fim"] - sessao["inicio"], 1),
+                              "estourou_tempo": bool(sessao.get("estourou"))})
             self._escrever(sessao, f"[hub] encerrado com código {codigo}")
             MONITOR.record_event(f"Terminal {sessao['id']}: código {codigo}.")
+
+    def _estourar(self, ident: str) -> None:
+        with self.lock:
+            sessao = self.sessoes.get(ident)
+        if sessao is None or sessao["proc"].poll() is not None:
+            return
+        sessao["estourou"] = True
+        self._escrever(sessao, f"[hub] tempo limite de {sessao['limite']} s atingido; encerrando.")
+        try:
+            self.encerrar(ident)
+        except ValueError:
+            pass
 
     def resumo(self, ident: str) -> dict[str, object]:
         with self.lock:
@@ -941,7 +1043,10 @@ class Handler(BaseHTTPRequestHandler):
             self.enviar_json(200, MONITOR.history_since(max(0, after)))
             return
         if path == "/hub/terminal":
-            self.enviar_json(200, {"sessions": TERMINAIS.listar()})
+            politica = politica_terminal()
+            self.enviar_json(200, {"sessions": TERMINAIS.listar(), "policy": {
+                "enabled": politica["habilitado"], "folders": [str(p) for p in politica["pastas"]],
+                "timeout_s": politica["tempo_limite_s"], "file": str(POLITICA_TERMINAL)}})
             return
         if path.startswith("/hub/terminal/"):
             ident = path[len("/hub/terminal/"):].strip("/")
@@ -1013,6 +1118,8 @@ class Handler(BaseHTTPRequestHandler):
                     self.enviar_json(200, TERMINAIS.encerrar(ident[:-len("/stop")]))
                     return
                 self.enviar_json(404, {"error": "Rota desconhecida."}); return
+            except TerminalDesligado as exc:
+                self.enviar_json(403, {"error": str(exc), "policy_file": str(POLITICA_TERMINAL)}); return
             except (TvError, ValueError) as exc:
                 self.enviar_json(400, {"error": str(exc)}); return
         if path == "/hub/command":

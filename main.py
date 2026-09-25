@@ -2143,6 +2143,27 @@ class Nebula:
             vk_media_play_pause, 0, keyeventf_keyup, 0
         )
 
+    def _pausar_midia(self) -> bool:
+        self.alternar_reproducao()
+        self.saida.falar(random.choice(RESPOSTAS_PAUSE))
+        return True
+
+    def _continuar_midia(self) -> bool:
+        self.alternar_reproducao()
+        self.saida.falar(random.choice(RESPOSTAS_CONTINUAR))
+        return True
+
+    def _ajustar_volume_midia(self, aumentar: bool) -> bool:
+        if ajustar_volume_youtube(aumentar=aumentar, passos=2):
+            self.saida.falar(random.choice((
+                "Ajustei o volume da música direto no YouTube.",
+                "Pronto. Mexi só no player do YouTube, não no Windows inteiro.",
+                "Volume do YouTube ajustado.",
+            )))
+            return True
+        self.saida.falar("Não encontrei uma janela aberta do YouTube para ajustar.")
+        return False
+
     def pesquisar_youtube(self, pesquisa: str) -> None:
         if not pesquisa:
             self.saida.falar("Pesquisar o quê exatamente? O vazio existencial?")
@@ -2552,14 +2573,10 @@ class Nebula:
             "reproduza a musica", "continua isso", "retoma isso",
         )
         if corresponde_intencao(comando, comandos_pause, 0.80):
-            self.alternar_reproducao()
-            self.saida.falar(random.choice(RESPOSTAS_PAUSE))
-            return True
+            return self._pausar_midia()
 
         if corresponde_intencao(comando, comandos_continuar, 0.80):
-            self.alternar_reproducao()
-            self.saida.falar(random.choice(RESPOSTAS_CONTINUAR))
-            return True
+            return self._continuar_midia()
 
         diminuir_volume = any(frase in comando for frase in (
             "abaixa o volume", "abaixe o volume", "baixa o volume",
@@ -2571,14 +2588,7 @@ class Nebula:
             "suba o volume", "mais volume", "aumenta a musica", "aumente a musica",
         ))
         if diminuir_volume or aumentar_volume:
-            if ajustar_volume_youtube(aumentar=aumentar_volume, passos=2):
-                self.saida.falar(random.choice((
-                    "Ajustei o volume da música direto no YouTube.",
-                    "Pronto. Mexi só no player do YouTube, não no Windows inteiro.",
-                    "Volume do YouTube ajustado.",
-                )))
-            else:
-                self.saida.falar("Não encontrei uma janela aberta do YouTube para ajustar.")
+            self._ajustar_volume_midia(aumentar=aumentar_volume)
             return True
 
         if "que horas" in comando or comando == "horas":

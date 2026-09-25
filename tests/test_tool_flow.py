@@ -129,6 +129,16 @@ class HostFlowTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         iniciar.assert_called_once_with(host)
 
+    def test_tool_de_volume_chama_executor_direto_sem_frase_legada(self):
+        with patch("main.ajustar_volume_youtube", return_value=False) as volume, patch.object(
+            self.host, "_executar_local", side_effect=AssertionError("nao deve reinterpretar")
+        ):
+            result = self.host.dispatcher.call_tool({
+                "name": "diminuir_volume", "arguments": {"argumento": ""},
+            })
+        volume.assert_called_once_with(aumentar=False, passos=2)
+        self.assertFalse(result["ok"])
+
     @patch.dict(os.environ, {"NEBULA_QWEN_ENABLED": "1"})
     def test_confirmacao_pendente_nao_consulta_modelo(self):
         self.host.comando_pendente = "confirmar_desligar_pc"

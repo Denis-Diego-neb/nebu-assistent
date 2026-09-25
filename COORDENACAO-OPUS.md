@@ -282,5 +282,93 @@ Dois avisos: o Tailscale **deste PC** está offline no tailnet (o notebook vê
 hub novo, dá para executar comando nele por `POST /hub/terminal` em
 `192.168.15.4:8766` — foi assim que rodei o `netcheck` de lá.
 
+## Passagem de bastão — 24/09, as duas sem crédito
+
+Eu reinicio em ~20 min e o Codex volta em ~30. **Quem voltar primeiro segue a
+fila da Dupla**; o recado `handoff` no diário tem o estado completo, e a
+memória comprimida chega sozinha na primeira rodada de cada uma.
+
+### Decisões do Denis que valem daqui para frente
+
+- **Nada de interface web.** Reescrita nativa: celular em Java, PC em Qt, a
+  mesma nebulosa de `nebula_sky/`. A rede só carrega comandos.
+- O dourado virou **a cor da nebulosa**; botões acompanham o céu.
+- Cartões cinza viraram **vidro fosco** legível.
+- O **"Painel completo"** some quando o nativo tiver tudo.
+- Dispositivos e Modos numa tela só.
+
+### O que está no ar
+
+| | |
+| --- | --- |
+| Nebula 1.28.0 | rota `/api/dupla/conversa` (só o que é novo; o snapshot inteiro dava 316 MB/h no 4G), chat sem avisos repetidos |
+| APK no A71 | céu nativo com giroscópio, vidro, cor dinâmica, chat da Dupla nativo com símbolo por modelo, menu sanduíche, painel web sem abertura automática |
+| Ponte do Gemini | 8767, token fixo no usuário; falta o Denis recarregar a extensão e colar o token |
+
+### Pontos abertos que merecem atenção
+
+- O menu sanduíche não abriu no único toque de teste, que coincidiu com o
+  Denis usando outro app. Há logs `NebulaMenu`: `adb logcat -s NebulaMenu`.
+- fps caiu de 25 para ~22 com o vidro.
+- Compile o APK com `NEBULA_POWER_TOKEN` exportado do escopo de usuário: o
+  Gradle lê do ambiente e os shells daqui não têm a variável.
+- Nada commitado desde `313681b`; o ok de commit do Denis valia só para aquele.
+
 Livre para o próximo item. Se quiser que eu assuma algo pelo próprio painel,
 planeje a tarefa com `owner: "opus"` que eu reservo por lá.
+
+## Rodada 6 — migração MCP: mídia (24/09)
+
+Pedido do Denis: continuar a migração para MCP. Reserva desta seção:
+`modules/desktop/media.py`, `modules/desktop/__init__.py`, `core/bootstrap.py`,
+`core/legacy_actions.py`, `main.py` (só os métodos de mídia),
+`tests/test_modular_tools.py`, `tests/test_tool_flow.py`, `modules/README.md`.
+Não toquei em `services/collaboration/`, `colaboracao_ferramentas.py`,
+`nebula_front/` nem nos testes da Dupla (reserva de rolagem do Codex).
+
+As quatro tools de mídia agora são chamadas direto, sem frase legada, e
+aparecem no servidor MCP pelo mesmo `Registry`. Suíte completa: 524 OK.
+Restam no adaptador legado: abajur (tools simples), `capturar_tela`,
+`salvar_clipe`, `identificar_musica`, `ver_horas`, `abrir_emails`, `desligar_pc`.
+
+## Rodada 7 — o falso "a Nebula reiniciou" (25/09 00:40 UTC)
+
+Reserva: `tests/test_dupla_ferramentas.py` e `tests/test_dupla_rotas.py` (meus,
+O-03 e O-11). Não toquei em `services/collaboration/`.
+
+O aviso das 00:34:40 ("Conversa anterior foi encerrada porque a Nebula reiniciou
+no meio da rodada") **não veio de reinício**: a resposta do Codex chegou 24 s
+depois. Veio da suíte de testes. Dois testes meus chamavam
+`remote_server.colaboracao()` sem trocar o projeto; `STATE` lê o projeto ativo de
+`%LOCALAPPDATA%\Nebula\remote.json`, então abriam o store **real** e rodavam
+`liberar_rodadas_orfas`, que encerra a conversa em andamento — e, no modo
+Desenvolver, derruba a árvore do CLI. O autopilot do `ai_sprints` (no ar desde
+21/09 23:47) roda `unittest discover -s tests` sozinho; com a suíte dele em
+curso (iniciada 21:38:42 locais), o `.gitignore` do store real foi reescrito às
+21:38:51, no meio desta rodada. A minha primeira execução dos testes, antes da
+correção, também abriu o store real uma vez.
+
+Provado pelo `mtime` de `.nebula-collaboration/.gitignore`: mudava a cada
+execução dos dois testes. Corrigido com projeto temporário; suíte da raiz com
+564 OK e o store real intacto antes e depois.
+
+Revisão da correção do Codex no `store.py` (repetir o `os.replace`): aprovada,
+10/10 testes. A causa do `WinError 5` não foi provada — os exportadores já se
+serializam pela trava do SQLite, então sobra leitor externo (antivírus,
+editor). Sugestões do lado dele: `/api/collaboration/log` ainda propaga o erro
+depois de 5 tentativas, e o diário inteiro (456 KB) é reescrito a cada evento,
+inclusive `tool_activity`.
+
+Pendente, fora do meu alcance nesta rodada: publicar o hub no notebook
+(publicação é proibida para a Dupla); até lá o notebook roda o terminal antigo,
+sem política. O `NebulaPowerServer.exe` local (PID 56372, 23/09 06:18) está vivo
+mas não escuta porta nenhuma — é ele que trava a cópia do exe.
+
+## Regras do Denis para o celular (valem para as duas)
+
+- **Toda aba ou seção nova entra no menu sanduíche (☰)** do `MobileDashboard`:
+  item em `montarMenu()` (`itens`, `secaoMenu`, `titulosMenu`), ícone vetorial
+  novo em `Icone.java` e o caso em `select()`. Nada de barra inferior. Ele
+  testou o ☰ em 24/09 e aprovou.
+- Interface **nativa**, nunca web; cor de destaque vem da nebulosa (`Tema`);
+  cartões são vidro (`Tema.vidro`).

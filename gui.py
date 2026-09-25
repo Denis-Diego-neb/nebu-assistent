@@ -53,7 +53,7 @@ from main import (
 from remote_server import (
     CONFIG_DIR, add_conversation_message, get_conversation, get_dark_mode,
     get_device_status, get_latest_job, get_pin, queue_device_command, set_dark_mode,
-    start_server, url_espaco, POWER_TOKEN,
+    start_server, token_ponte_gemini, url_espaco, POWER_TOKEN,
 )
 import front_window
 from transfer_chat import CHAT_STORE, MAX_FILE_BYTES
@@ -1698,6 +1698,66 @@ class InterfaceNebula:
         self.tuya_status.grid(
             row=8, column=0, columnspan=3, sticky="ew", pady=(22, 0)
         )
+        self._montar_token_gemini(area, primeira_linha=9)
+
+    def _montar_token_gemini(self, area: tk.Frame, primeira_linha: int) -> None:
+        """Token da ponte do Gemini à mão, para colar no popup da extensão do Brave.
+
+        Sem isto, o token só existia na variável de ambiente e, depois que saía
+        da área de transferência, não havia onde copiá-lo de novo.
+        """
+        tk.Label(
+            area, text="Ponte do Gemini", bg=FUNDO, fg=TEXTO,
+            font=("Segoe UI Semibold", 16),
+        ).grid(row=primeira_linha, column=0, columnspan=3, sticky="w", pady=(34, 0))
+        tk.Label(
+            area,
+            text="Cole este token no popup da extensão Nebula ↔ Gemini no Brave, em "
+                 "“Token exibido pela ponte local”, e clique em Conectar ponte.",
+            bg=FUNDO, fg=SECUNDARIO, justify="left", wraplength=720, font=("Segoe UI", 10),
+        ).grid(row=primeira_linha + 1, column=0, columnspan=3, sticky="w", pady=(6, 12))
+        tk.Label(
+            area, text="Token", bg=FUNDO, fg=TEXTO,
+            font=("Segoe UI Semibold", 10), anchor="w",
+        ).grid(row=primeira_linha + 2, column=0, sticky="w", padx=(0, 18), pady=7)
+        self.gemini_token = tk.StringVar(value=token_ponte_gemini())
+        self.gemini_token_entry = tk.Entry(
+            area, textvariable=self.gemini_token, show="*", state="readonly",
+            readonlybackground="#f2f5f9", fg=TEXTO, relief="flat", bd=0, font=("Consolas", 10),
+        )
+        self.gemini_token_entry.grid(row=primeira_linha + 2, column=1, sticky="ew", ipady=9, pady=7)
+        acoes = tk.Frame(area, bg=FUNDO)
+        acoes.grid(row=primeira_linha + 2, column=2, sticky="w", padx=(10, 0), pady=7)
+        self.gemini_mostrar = tk.BooleanVar(value=False)
+        tk.Checkbutton(
+            acoes, text="Mostrar", variable=self.gemini_mostrar,
+            command=lambda: self.gemini_token_entry.configure(show="" if self.gemini_mostrar.get() else "*"),
+            bg=FUNDO, fg=SECUNDARIO, activebackground=FUNDO, activeforeground=TEXTO,
+            selectcolor=FUNDO, relief="flat", bd=0, font=("Segoe UI", 9), cursor="hand2",
+        ).pack(side="left")
+        tk.Button(
+            acoes, text="Copiar", command=self._copiar_token_gemini,
+            bg="#edf8f2", fg=AZUL_ESCURO, activebackground="#d8f1e4",
+            relief="flat", bd=0, padx=14, pady=7, font=("Segoe UI Semibold", 9), cursor="hand2",
+        ).pack(side="left", padx=(10, 0))
+        self.gemini_token_status = tk.Label(
+            area, text="" if self.gemini_token.get() else
+            "Token ainda não definido: a ponte sorteia um novo a cada início.",
+            bg=FUNDO, fg=SECUNDARIO, font=("Segoe UI", 9),
+        )
+        self.gemini_token_status.grid(row=primeira_linha + 3, column=1, columnspan=2, sticky="w")
+
+    def _copiar_token_gemini(self) -> None:
+        # Relê a cada cópia: se o token mudou desde que a tela abriu, copia o atual.
+        token = token_ponte_gemini()
+        self.gemini_token.set(token)
+        if not token:
+            self.gemini_token_status.configure(text="Não há token definido para copiar.")
+            return
+        self.janela.clipboard_clear()
+        self.janela.clipboard_append(token)
+        self.janela.update()
+        self.gemini_token_status.configure(text="Token copiado. Cole no popup da extensão.")
 
     def _alternar_chave_tuya(self) -> None:
         self.tuya_local_key_entry.configure(

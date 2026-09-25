@@ -23,4 +23,7 @@ android {
         buildConfigField 'String', 'NEBULA_POWER_TOKEN', '"' + escapedPowerToken + '"'
     }
     buildFeatures { buildConfig true }
+    // A nebulosa nativa le os shaders de nebula_sky/, a mesma fonte do app do
+    // PC. Entram como assets do APK: nada e baixado da rede.
+    sourceSets { main { assets.srcDirs += ['../../nebula_sky'] } }
 }

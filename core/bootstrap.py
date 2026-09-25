@@ -11,6 +11,11 @@ from modules.desktop.actions import (
     AcoesDesktop,
     registrar_tools_desktop,
 )
+from modules.desktop.media import (
+    MIDIA_TOOL_NAMES,
+    AcoesMidia,
+    registrar_tools_midia,
+)
 from modules.iot.ambilight import (
     AMBILIGHT_TOOL_NAMES,
     AcoesAmbilight,
@@ -66,6 +71,18 @@ def criar_dispatcher(host, nomes=None) -> Dispatcher:
         aguardando_resposta=lambda: host.aguardando_resposta,
         nomes=nomes,
     )
+    registrar_tools_midia(
+        registry,
+        AcoesMidia(
+            pausar=host._pausar_midia,
+            continuar=host._continuar_midia,
+            aumentar_volume=lambda: host._ajustar_volume_midia(aumentar=True),
+            diminuir_volume=lambda: host._ajustar_volume_midia(aumentar=False),
+        ),
+        obter_ultima_mensagem=lambda: host._ultima_resposta,
+        aguardando_resposta=lambda: host.aguardando_resposta,
+        nomes=nomes,
+    )
 
     def validate(name, arguments):
         if set(arguments) != {"argumento"}:
@@ -96,7 +113,8 @@ def criar_dispatcher(host, nomes=None) -> Dispatcher:
     for name in ACOES_QWEN:
         if nomes is not None and name not in nomes:
             continue
-        if name in AMBILIGHT_TOOL_NAMES | MODOS_CORRIDA_TOOL_NAMES | DESKTOP_TOOL_NAMES:
+        if name in (AMBILIGHT_TOOL_NAMES | MODOS_CORRIDA_TOOL_NAMES
+                    | DESKTOP_TOOL_NAMES | MIDIA_TOOL_NAMES):
             continue
         schema = {"type": "object", "additionalProperties": False,
                   "required": ["argumento"], "properties": {"argumento": {

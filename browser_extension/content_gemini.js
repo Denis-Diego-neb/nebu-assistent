@@ -1,4 +1,4 @@
-// Esta etapa confirma a aba e a entrega do job. O Gemini continua sob controle do usuario.
+// A aba automatica permanece na mesma conversa entre avaliacoes.
 if (!globalThis.__nebulaGeminiBridgeLoaded) {
     globalThis.__nebulaGeminiBridgeLoaded = true;
     let currentJob = null;
@@ -11,14 +11,27 @@ if (!globalThis.__nebulaGeminiBridgeLoaded) {
         }
         const identity = job.job_id + ':' + job.fingerprint + ':' + job.content_sha256;
         let saved = JSON.parse(sessionStorage.getItem(storageKey) || 'null');
-        if (saved && saved.identity !== identity) throw new Error('Esta aba pertence a outra avaliacao.');
+        let conversationUrl = null;
+        if (saved && saved.identity !== identity) {
+            // Um job enviado ha mais de 15 min ja foi abandonado pelo background
+            // (que desiste aos 16). Sem isto a aba guardava o "submitted" dele
+            // para sempre e recusava todo job novo: o automatico parava de vez.
+            const abandoned = saved.phase !== 'captured' && Date.now() - (saved.sentAt || 0) > 15 * 60 * 1000;
+            if (saved.phase !== 'captured' && !abandoned) throw new Error('A avaliacao anterior ainda esta pendente nesta aba.');
+            if (!abandoned && saved.conversationUrl && saved.conversationUrl !== location.href.split(/[?#]/)[0]) {
+                throw new Error('A conversa do Gemini mudou. Confira a aba antes de retomar.');
+            }
+            conversationUrl = abandoned ? null : (saved.conversationUrl || null);
+            saved = null;
+            stable = '';
+            stableSince = 0;
+        }
         const editor = document.querySelector('[contenteditable="true"][role="textbox"]');
         if (!editor) return {accepted: true, phase: 'loading'};
         if (!saved) {
-            if (editor.innerText.trim() || document.querySelector('model-response-content')) {
-                throw new Error('Aba nao esta vazia; nao vou misturar conversas.');
-            }
-            saved = {identity, sentAt: Date.now(), phase: 'preparing'};
+            if (editor.innerText.trim()) throw new Error('Campo do Gemini contem texto; confira a aba antes de retomar.');
+            const responseCount = document.querySelectorAll('model-response-content').length;
+            saved = {identity, sentAt: Date.now(), responseCount, conversationUrl, phase: 'preparing'};
             sessionStorage.setItem(storageKey, JSON.stringify(saved));
             editor.focus();
             document.execCommand('insertText', false, job.prompt);
@@ -35,23 +48,32 @@ if (!globalThis.__nebulaGeminiBridgeLoaded) {
             send.click();
             return {accepted: true, phase: 'submitted'};
         }
+        if (saved.phase === 'captured') return {accepted: true, response: saved.response};
         if (saved.phase !== 'submitted') throw new Error('Envio anterior incompleto; confira a aba antes de retomar.');
+        if (saved.conversationUrl && saved.conversationUrl !== location.href.split(/[?#]/)[0]) {
+            throw new Error('A conversa do Gemini mudou durante a avaliacao.');
+        }
         if (Date.now() - saved.sentAt > 15 * 60 * 1000) {
             throw new Error('Gemini sem resposta valida ha 15 minutos; automatico interrompido.');
         }
         const responses = [...document.querySelectorAll('model-response-content')];
-        if (responses.length !== 1) return {accepted: true, phase: 'waiting'};
-        const block = responses[0].querySelector('code');
-        const text = (block ? block.innerText : responses[0].innerText).trim();
+        if (responses.length <= saved.responseCount) return {accepted: true, phase: 'waiting'};
+        const latest = responses[responses.length - 1];
+        const blocks = [...latest.querySelectorAll('code')];
+        const text = (blocks.length === 1 ? blocks[0].innerText : latest.innerText).trim();
         let parsed;
         try { parsed = JSON.parse(text.replace(/^```json\s*/i, '').replace(/\s*```$/, '')); }
         catch { return {accepted: true, phase: 'waiting'}; }
-        if (!parsed.rewards || !parsed.summary || !['approved','revise'].includes(parsed.verdict)) {
+        if (!parsed || typeof parsed !== 'object' || !parsed.rewards || !parsed.summary || !['approved','revise'].includes(parsed.verdict)) {
             return {accepted: true, phase: 'waiting'};
         }
         if (stable !== text) { stable = text; stableSince = Date.now(); return {accepted: true, phase: 'settling'}; }
         if (Date.now() - stableSince < 5000) return {accepted: true, phase: 'settling'};
-        return {accepted: true, response: JSON.stringify(parsed)};
+        saved.phase = 'captured';
+        saved.response = JSON.stringify(parsed);
+        saved.conversationUrl = location.href.split(/[?#]/)[0];
+        sessionStorage.setItem(storageKey, JSON.stringify(saved));
+        return {accepted: true, response: saved.response};
     }
     chrome.runtime.onMessage.addListener((message, sender, respond) => {
         if (sender.id !== chrome.runtime.id) return;

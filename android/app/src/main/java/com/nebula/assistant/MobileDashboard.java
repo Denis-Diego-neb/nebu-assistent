@@ -30,19 +30,24 @@ import java.util.concurrent.Executors;
 
 /** Navegação nativa; rede fora da UI, sem polling quando a tela está oculta. */
 final class MobileDashboard {
-    final LinearLayout root;
+    final android.widget.FrameLayout root;
+    private final LinearLayout pagina;
+    private android.widget.FrameLayout menu;
+    private LinearLayout alvoAparelhos;
+    private final TextView[] titulosMenu = new TextView[7];
+    /** Seção de cada item do menu; -1 abre a Dupla e -2 o painel completo. */
+    private final int[] secaoMenu = {0, 1, 3, -1, -2, 2, 5};
     final Button powerButton;
     final Button espacoButton;
     final TextView status;
     private final Activity activity;
     private final String token;
     private final String[] hubs, pcs;
-    private final Runnable wake, espaco;
+    private final Runnable wake, espaco, dupla;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final ExecutorService network = Executors.newSingleThreadExecutor();
-    private final LinearLayout content, navigation;
+    private final LinearLayout content;
     private final LinearLayout home;
-    private final Button[] tabs = new Button[4];
     private String hubEndpoint, pcEndpoint;
     private int selected, generation;
     private boolean closed, busy, active = true;
@@ -56,49 +61,40 @@ final class MobileDashboard {
     private String selectedTvId = "";
     private final Runnable mediaTicker = this::refreshMedia;
     private final int bg = Color.rgb(47, 48, 52), card = Color.rgb(58, 59, 63);
-    private final int accent = Color.rgb(234, 211, 174), text = Color.rgb(247, 241, 232);
-    private final int muted = Color.rgb(190, 181, 168), surface = Color.rgb(42, 43, 47);
+    private final int accent = Color.rgb(234, 211, 174), text = Tema.TEXTO;
+    private final int muted = Tema.SUAVE, surface = Color.rgb(42, 43, 47);
     private interface Work { JSONObject run() throws Exception; }
     private interface Result { void show(JSONObject data); }
 
     MobileDashboard(Activity activity, String token, String[] hubs, String[] pcs,
-                    Runnable wake, Runnable espaco) {
+                    Runnable wake, Runnable espaco, Runnable dupla) {
         this.activity = activity; this.token = token; this.hubs = hubs; this.pcs = pcs;
-        this.wake = wake; this.espaco = espaco;
-        root = column();
-        GradientDrawable backdrop = new GradientDrawable(
-            GradientDrawable.Orientation.TL_BR,
-            new int[]{Color.rgb(67, 67, 70), bg, Color.rgb(40, 41, 45)}
-        );
-        root.setBackground(backdrop);
-        root.setPadding(dp(10), dp(12), dp(12), dp(12));
-        root.setOnApplyWindowInsetsListener((view, insets) -> {
+        this.wake = wake; this.espaco = espaco; this.dupla = dupla;
+        pagina = column();
+        pagina.setOnApplyWindowInsetsListener((view, insets) -> {
             view.setPadding(dp(10) + insets.getSystemWindowInsetLeft(), dp(12) + insets.getSystemWindowInsetTop(),
                 dp(12) + insets.getSystemWindowInsetRight(), dp(12) + insets.getSystemWindowInsetBottom());
             return insets;
         });
         LinearLayout body = column(); body.setPadding(dp(14), dp(4), 0, 0);
+        LinearLayout topo = new LinearLayout(activity); topo.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout marca = column();
         TextView brand = label("NEBULA", 22, text); brand.setLetterSpacing(.12f);
-        body.addView(brand); body.addView(label("SUA CASA. UM CONTROLE.", 9, accent));
+        marca.addView(brand); marca.addView(Tema.destaque(label("SUA CASA. UM CONTROLE.", 9, accent)));
+        topo.addView(marca, new LinearLayout.LayoutParams(0, -2, 1));
+        // Sanduíche no lugar da barra de baixo: cabe o que vier sem espremer.
+        topo.addView(botaoIcone(Icone.Tipo.MENU, "Abrir menu", () -> abrirMenu(true)),
+            new LinearLayout.LayoutParams(dp(48), dp(48)));
+        body.addView(topo);
         ScrollView scroll = new ScrollView(activity); scroll.setFillViewport(true);
         content = column(); content.setPadding(0, dp(12), 0, dp(12)); scroll.addView(content);
         body.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
-        navigation = column();
-        navigation.setOrientation(LinearLayout.HORIZONTAL);
-        navigation.setPadding(dp(4), dp(8), dp(4), dp(8));
-        GradientDrawable navShape = new GradientDrawable(); navShape.setColor(surface); navShape.setCornerRadius(dp(10));
-        navigation.setBackground(navShape); navigation.setElevation(dp(10));
-        TextView navBrand = label("N", 20, accent); navBrand.setGravity(Gravity.CENTER);
-        navigation.addView(navBrand, new LinearLayout.LayoutParams(dp(34), -1));
-        String[] names = {"⌂\nCasa", "▯\nDisp.", "◎\nModos", "♫\nMúsica"};
-        for (int i = 0; i < names.length; i++) {
-            final int index = i;
-            tabs[i] = navigationButton(names[i], () -> select(index));
-            tabs[i].setPadding(dp(2), 0, dp(2), 0);
-            navigation.addView(tabs[i], new LinearLayout.LayoutParams(0, -1, 1));
-        }
-        root.addView(body, new LinearLayout.LayoutParams(-1, 0, 1));
-        root.addView(navigation, new LinearLayout.LayoutParams(-1, dp(76)));
+        pagina.addView(body, new LinearLayout.LayoutParams(-1, 0, 1));
+        root = new android.widget.FrameLayout(activity);
+        root.addView(pagina, new android.widget.FrameLayout.LayoutParams(-1, -1));
+        menu = montarMenu();
+        menu.setVisibility(View.GONE);
+        root.addView(menu, new android.widget.FrameLayout.LayoutParams(-1, -1));
         home = column();
         TextView headline = label("Tudo à mão", 31, text); headline.setGravity(Gravity.CENTER_HORIZONTAL); home.addView(headline);
         TextView intro = label("Seu computador, sua casa e seus controles em um só lugar.", 14, muted);
@@ -112,12 +108,14 @@ final class MobileDashboard {
         status = label("Pronta para enviar o sinal de inicialização.", 12, muted); pc.addView(status);
         LinearLayout shortcuts = homeCard("CONTROLE UNIVERSAL", "Seus dispositivos",
             "TVs, iluminação e ar-condicionado.", primaryButton("Abrir", () -> select(1)));
-        LinearLayout tools = homeCard("ARENA + EXPERIMENTOS", "Ferramentas",
+        LinearLayout tools = homeCard("ARENA E LABORATÓRIO", "Arena e laboratório",
             "Boost, nick e BPM sobre o jogo.", primaryButton("Abrir", () -> select(2)));
+        // O painel web não aparece mais na tela inicial; fica só no menu, até o
+        // nativo ter tudo e ele sair de vez.
         espacoButton = primaryButton("Abrir", espaco);
-        LinearLayout space = homeCard("ESPAÇO", "Painel completo",
-            "Conversa, casa, projetos, mídia e terminal do PC.", espacoButton);
-        for (LinearLayout item : new LinearLayout[]{pc, shortcuts, tools, space}) {
+        LinearLayout duo = homeCard("DUPLA", "Duas IAs no projeto",
+            "Converse com as duas sobre o projeto, de onde estiver.", primaryButton("Abrir", dupla));
+        for (LinearLayout item : new LinearLayout[]{pc, duo, shortcuts, tools}) {
             LinearLayout.LayoutParams itemParams = landscape
                 ? new LinearLayout.LayoutParams(0, -1, 1)
                 : new LinearLayout.LayoutParams(-1, -2);
@@ -126,6 +124,89 @@ final class MobileDashboard {
         }
         home.addView(homeCards);
         select(0);
+    }
+
+    private View botaoIcone(Icone.Tipo tipo, String descricao, Runnable acao) {
+        android.widget.FrameLayout b = new android.widget.FrameLayout(activity);
+        Tema.vidro(b, 24);
+        b.addView(new Icone(activity, tipo), new android.widget.FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER));
+        b.setContentDescription(descricao);
+        b.setClickable(true);
+        b.setOnClickListener(v -> acao.run());
+        return b;
+    }
+
+    /**
+     * Menu por cima da nebulosa. A página some enquanto ele está aberto: o vidro
+     * é desenhado por trás de todas as telas, então um painel por cima dos
+     * cartões deixaria os cartões aparecendo através dele.
+     */
+    private android.widget.FrameLayout montarMenu() {
+        android.widget.FrameLayout camada = new android.widget.FrameLayout(activity);
+        camada.setClickable(true);
+        camada.setOnClickListener(v -> abrirMenu(false));
+        LinearLayout lista = column();
+        lista.setOnApplyWindowInsetsListener((view, insets) -> {
+            view.setPadding(dp(24), dp(16) + insets.getSystemWindowInsetTop(), dp(24), dp(16) + insets.getSystemWindowInsetBottom());
+            return insets;
+        });
+        LinearLayout topo = new LinearLayout(activity); topo.setGravity(Gravity.CENTER_VERTICAL);
+        TextView titulo = label("Menu", 26, text);
+        titulo.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
+        topo.addView(titulo, new LinearLayout.LayoutParams(0, -2, 1));
+        topo.addView(botaoIcone(Icone.Tipo.FECHAR, "Fechar menu", () -> abrirMenu(false)),
+            new LinearLayout.LayoutParams(dp(48), dp(48)));
+        lista.addView(topo);
+        Object[][] itens = {
+            {Icone.Tipo.INICIO, "Início", "Seu PC e os atalhos."},
+            {Icone.Tipo.DISPOSITIVOS, "Dispositivos e modos", "Abajur, TVs, ar e o modo de cada aparelho."},
+            {Icone.Tipo.AUDIO, "Áudio", "O que está tocando no PC."},
+            {Icone.Tipo.DUPLA, "Dupla", "Claude e o GPT: conversa, desenvolvimento e limites."},
+            {Icone.Tipo.PAINEL, "Painel completo", "Projetos, memória e terminal do PC."},
+            {Icone.Tipo.ARENA, "Arena e laboratório", "Overlay, painel do telefone e sensor Wi-Fi."},
+            {Icone.Tipo.CONFIG, "Configuração", "Token da ponte do Gemini."},
+        };
+        for (int i = 0; i < itens.length; i++) {
+            final int secao = secaoMenu[i];
+            LinearLayout linha = new LinearLayout(activity);
+            linha.setGravity(Gravity.CENTER_VERTICAL);
+            linha.setPadding(dp(16), dp(14), dp(16), dp(14));
+            Tema.vidro(linha, 18);
+            linha.setClickable(true);
+            linha.setOnClickListener(v -> {
+                abrirMenu(false);
+                if (secao >= 0) select(secao); else if (secao == -1) dupla.run(); else espaco.run();
+            });
+            linha.addView(new Icone(activity, (Icone.Tipo) itens[i][0]), new LinearLayout.LayoutParams(dp(26), dp(26)));
+            LinearLayout textos = column(); textos.setPadding(dp(16), 0, 0, 0);
+            titulosMenu[i] = label((String) itens[i][1], 17, text);
+            titulosMenu[i].setPadding(0, 0, 0, dp(2));
+            textos.addView(titulosMenu[i]);
+            TextView detalhe = label((String) itens[i][2], 12, muted); detalhe.setPadding(0, 0, 0, 0);
+            textos.addView(detalhe);
+            linha.addView(textos, new LinearLayout.LayoutParams(0, -2, 1));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.setMargins(0, dp(12), 0, 0);
+            lista.addView(linha, lp);
+        }
+        camada.addView(lista, new android.widget.FrameLayout.LayoutParams(-1, -1));
+        return camada;
+    }
+
+    void abrirMenu(boolean aberto) {
+        if (menu == null) return;
+        for (int i = 0; i < titulosMenu.length; i++) {
+            if (titulosMenu[i] != null) titulosMenu[i].setTextColor(secaoMenu[i] == selected ? Tema.acento().texto : text);
+        }
+        menu.setVisibility(aberto ? View.VISIBLE : View.GONE);
+        pagina.setVisibility(aberto ? View.INVISIBLE : View.VISIBLE);
+    }
+
+    /** Para o botão voltar do Android fechar o menu antes de sair da tela. */
+    boolean fecharMenuSeAberto() {
+        if (menu == null || menu.getVisibility() != View.VISIBLE) return false;
+        abrirMenu(false);
+        return true;
     }
 
     private int dp(int value) { return Math.round(value * activity.getResources().getDisplayMetrics().density); }
@@ -139,14 +220,15 @@ final class MobileDashboard {
     private Button button(String label, Runnable action) {
         Button v = new Button(activity); v.setText(label); v.setTextColor(text); v.setAllCaps(false);
         v.setMinHeight(dp(48)); v.setTextSize(14); v.setStateListAnimator(null);
-        v.setBackground(rounded(surface, 8, Color.rgb(76, 76, 80)));
+        Tema.vidro(v, 10);
         v.setOnClickListener(view -> action.run()); return v;
     }
     private Button primaryButton(String label, Runnable action) {
-        Button v = button(label, action); v.setTextColor(Color.rgb(43, 40, 35));
+        Button v = new Button(activity); v.setText(label); v.setAllCaps(false);
+        v.setOnClickListener(view -> action.run());
         v.setTextSize(13); v.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         v.setMinWidth(dp(84)); v.setMinHeight(dp(42)); v.setPadding(dp(16), 0, dp(16), 0);
-        v.setBackground(rounded(accent, 8, Color.TRANSPARENT)); return v;
+        return Tema.botao(v, 10);
     }
     private Button navigationButton(String label, Runnable action) {
         Button v = button(label, action); v.setTextSize(10); v.setMinHeight(0);
@@ -158,17 +240,16 @@ final class MobileDashboard {
     }
     private LinearLayout card(String eyebrow, String title) {
         LinearLayout v = column(); v.setPadding(dp(16), dp(14), dp(16), dp(14));
-        GradientDrawable shape = new GradientDrawable(); shape.setColor(card); shape.setCornerRadius(dp(10));
-        shape.setStroke(dp(1), Color.rgb(78, 78, 82)); v.setBackground(shape); v.setElevation(dp(7));
+        Tema.vidro(v, 16);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2); params.setMargins(0, dp(14), 0, 0); v.setLayoutParams(params);
-        v.addView(label(eyebrow.toUpperCase(java.util.Locale.ROOT), 10, accent)); v.addView(label(title, 22, text)); return v;
+        v.addView(Tema.destaque(label(eyebrow.toUpperCase(java.util.Locale.ROOT), 10, accent))); v.addView(label(title, 22, text)); return v;
     }
     private LinearLayout homeCard(String eyebrow, String title, String description, Button action) {
         LinearLayout v = column(); v.setPadding(dp(17), dp(14), dp(17), dp(14));
-        v.setBackground(rounded(card, 10, Color.rgb(78, 78, 82))); v.setElevation(dp(8));
+        Tema.vidro(v, 16);
         LinearLayout header = new LinearLayout(activity); header.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout copy = column();
-        TextView overline = label(eyebrow.toUpperCase(java.util.Locale.ROOT), 9, accent); overline.setLetterSpacing(.06f);
+        TextView overline = Tema.destaque(label(eyebrow.toUpperCase(java.util.Locale.ROOT), 9, accent)); overline.setLetterSpacing(.06f);
         copy.addView(overline); copy.addView(label(title, 20, text));
         header.addView(copy, new LinearLayout.LayoutParams(0, -2, 1));
         header.addView(action, new LinearLayout.LayoutParams(-2, dp(42)));
@@ -181,26 +262,82 @@ final class MobileDashboard {
         if(turboTelemetry!=null) { turboTelemetry.close();turboTelemetry=null; }
         selected = index; generation++; content.removeAllViews();
         root.setKeepScreenOn(index == 3 || index == 4);
-        for (int i = 0; i < tabs.length; i++) {
-            boolean activeTab = i == index;
-            tabs[i].setTextColor(activeTab ? text : muted);
-            tabs[i].setBackground(rounded(activeTab ? Color.rgb(75, 71, 65) : Color.TRANSPARENT,
-                8, Color.TRANSPARENT));
-        }
+        abrirMenu(false);
         if (index == 0) { content.addView(home); return; }
         if (index == 1) { devices(); return; }
         if (index == 2) { tools(); return; }
         if (index == 3) { media(); return; }
         if (index == 4) { turboPanel(); return; }
+        if (index == 5) { configuracao(); return; }
+    }
+
+    /** Configuração: por enquanto, o token da ponte do Gemini à mão para copiar. */
+    private void configuracao() {
+        content.addView(label("Configuração", 28, Color.WHITE));
+        LinearLayout ponte = card("PONTE DO GEMINI", "Token da extensão");
+        ponte.addView(label("Cole no popup da extensão Nebula ↔ Gemini, no Brave do PC, e clique em Conectar ponte.", 13, muted));
+        TextView valor = label("Consultando o PC…", 15, text);
+        valor.setTypeface(Typeface.MONOSPACE);
+        ponte.addView(valor);
+        final String[] token = {null};
+        final boolean[] visivel = {false};
+        Runnable pintar = () -> {
+            if (token[0] != null) valor.setText(visivel[0] ? token[0] : mascarar(token[0]));
+        };
+        LinearLayout acoes = new LinearLayout(activity);
+        Button mostrar = button("Mostrar", () -> { });
+        mostrar.setOnClickListener(v -> {
+            visivel[0] = !visivel[0];
+            mostrar.setText(visivel[0] ? "Ocultar" : "Mostrar");
+            pintar.run();
+        });
+        acoes.addView(mostrar, new LinearLayout.LayoutParams(0, -2, 1));
+        LinearLayout.LayoutParams lpCopiar = new LinearLayout.LayoutParams(0, dp(48), 1);
+        lpCopiar.setMargins(dp(10), 0, 0, 0);
+        acoes.addView(primaryButton("Copiar", () -> copiarToken(token[0])), lpCopiar);
+        ponte.addView(acoes);
+        content.addView(ponte);
+        run(valor, () -> request(endpoint(true), "/api/gemini/ponte", null), data -> {
+            if (!data.optBoolean("definido")) {
+                valor.setText("O PC ainda não tem token fixo: a ponte sorteia um novo a cada início.");
+                return;
+            }
+            token[0] = data.optString("token");
+            pintar.run();
+        });
+    }
+
+    private static String mascarar(String t) {
+        return t.length() <= 8 ? "••••••••" : t.substring(0, 4) + " •••••••• " + t.substring(t.length() - 4);
+    }
+
+    private void copiarToken(String token) {
+        if (token == null) return;
+        android.content.ClipboardManager area = (android.content.ClipboardManager)
+            activity.getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+        android.content.ClipData clip = android.content.ClipData.newPlainText("Token da ponte do Gemini", token);
+        // Android 13+: marcado como sensível, o token não aparece na prévia da área de transferência.
+        android.os.PersistableBundle extras = new android.os.PersistableBundle();
+        extras.putBoolean("android.content.extra.IS_SENSITIVE", true);
+        clip.getDescription().setExtras(extras);
+        area.setPrimaryClip(clip);
+        android.widget.Toast.makeText(activity, "Token copiado.", android.widget.Toast.LENGTH_SHORT).show();
     }
 
     private void devices() {
-        content.addView(label("Dispositivos", 28, Color.WHITE));
+        content.addView(label("Dispositivos e modos", 28, Color.WHITE));
         TextView info = label("Controles dos aparelhos configurados no hub.", 14, muted); content.addView(info);
         LinearLayout row = new LinearLayout(activity);
         row.addView(button("Atualizar", () -> loadDevices(false, info)), new LinearLayout.LayoutParams(0, -2, 1));
         row.addView(button("Buscar TVs", () -> loadDevices(true, info)), new LinearLayout.LayoutParams(0, -2, 1));
-        content.addView(row); loadDevices(false, info);
+        content.addView(row);
+        // Os controles vêm do hub (funcionam até com o PC desligado); os modos,
+        // do PC, que é quem os executa. Antes o abajur aparecia completo nas
+        // duas abas. Os aparelhos ficam em contêiner próprio: loadDevices o refaz
+        // ao atualizar e não pode apagar os modos que vêm depois.
+        alvoAparelhos = column(); content.addView(alvoAparelhos);
+        independentModes();
+        loadDevices(false, info);
     }
 
     private void loadDevices(boolean discover, TextView info) {
@@ -208,12 +345,12 @@ final class MobileDashboard {
             String endpoint = endpoint(false);
             return request(endpoint, discover ? "/universal/discover" : "/universal/devices", discover ? new JSONObject() : null);
         }, data -> {
-            while (content.getChildCount() > 3) content.removeViewAt(3);
+            alvoAparelhos.removeAllViews();
             JSONArray devices = data.optJSONArray("devices");
             int count = devices == null ? 0 : devices.length();
             info.setText(count + " dispositivo(s) · " + (data.optBoolean("home_assistant_configured") ? "Home Assistant conectado" : "Hub local"));
             JSONArray errors = data.optJSONArray("errors");
-            if (errors != null && errors.length() > 0) content.addView(label(errors.optString(0), 14, Color.rgb(255, 181, 91)));
+            if (errors != null && errors.length() > 0) alvoAparelhos.addView(label(errors.optString(0), 14, Color.rgb(255, 181, 91)));
             addTvTabs(devices);
             for (int i = 0; i < count; i++) {
                 JSONObject device = devices.optJSONObject(i); if (device == null) continue;
@@ -226,7 +363,7 @@ final class MobileDashboard {
                 if (lg) {
                     lgRemoteControls(v, id, state, device.optBoolean("available") && hubEndpoint != null);
                     linkControls(v, id, state);
-                    content.addView(v);
+                    alvoAparelhos.addView(v);
                     continue;
                 }
                 LinearLayout buttons = null;
@@ -245,10 +382,10 @@ final class MobileDashboard {
                 if (id.equals("local:air")) airControls(v, device, state);
                 if (id.equals("local:lamp")) lampControls(v, state);
                 if ("tv".equals(device.optString("kind"))) linkControls(v, id, state);
-                content.addView(v);
+                alvoAparelhos.addView(v);
             }
-            if (count == 0) content.addView(label("Nenhum aparelho cadastrado. Ligue a TV e toque em Buscar TVs.", 15, muted));
-            content.addView(label("Novas marcas dependem de integração. Conecte o Home Assistant nas configurações do hub para ampliar seus controles.", 12, muted));
+            if (count == 0) alvoAparelhos.addView(label("Nenhum aparelho cadastrado. Ligue a TV e toque em Buscar TVs.", 15, muted));
+            alvoAparelhos.addView(label("Novas marcas dependem de integração. Conecte o Home Assistant nas configurações do hub para ampliar seus controles.", 12, muted));
         });
     }
 
@@ -293,7 +430,7 @@ final class MobileDashboard {
     }
 
     private void lgRemoteControls(LinearLayout card, String deviceId, TextView status, boolean available) {
-        card.addView(label("Controle LG webOS", 14, accent));
+        card.addView(Tema.destaque(label("Controle LG webOS", 14, accent)));
         LinearLayout top = new LinearLayout(activity);
         top.addView(remoteButton("Desligar", deviceId, "power_off", status, available), new LinearLayout.LayoutParams(0, -2, 1));
         top.addView(remoteButton("Mudo", deviceId, "mute", status, available), new LinearLayout.LayoutParams(0, -2, 1));
@@ -442,6 +579,8 @@ final class MobileDashboard {
         card.addView(label("Escolha a cor e solte para aplicar",12,muted));
         TextView brightness = label("Brilho",13,muted); card.addView(brightness);
         android.widget.SeekBar slider = new android.widget.SeekBar(activity);
+        Tema.seguir(slider, (v, a) -> { android.content.res.ColorStateList c = android.content.res.ColorStateList.valueOf(a.botao);
+            ((android.widget.SeekBar) v).setProgressTintList(c); ((android.widget.SeekBar) v).setThumbTintList(c); });
         slider.setMax(99); slider.setProgress(59);
         slider.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(android.widget.SeekBar bar,int progress,boolean fromUser) { brightness.setText("Brilho · " + (progress+1) + "%"); }
@@ -464,8 +603,10 @@ final class MobileDashboard {
     }
 
     private void tools() {
-        content.addView(label("Modos e ferramentas", 28, Color.WHITE));
-        independentModes();
+        content.addView(label("Arena e laboratório", 28, Color.WHITE));
+        TextView infoArena = label("Overlay sobre o jogo, painel do telefone e experimentos.", 14, muted);
+        content.addView(infoArena);
+        arena(infoArena);
         LinearLayout pulse = card("LABORATÓRIO WI-FI", "Pulso experimental");
         TextView bpm = label("— BPM", 34, Color.WHITE); pulse.addView(bpm);
         TextView sensor = label("Requer receptor com CSI Wi-Fi. O Wi-Fi comum do celular não fornece esta medição.", 14, muted); pulse.addView(sensor);
@@ -487,7 +628,7 @@ final class MobileDashboard {
     }
 
     private void media() {
-        content.addView(label("Música no PC", 28, Color.WHITE));
+        content.addView(label("Áudio", 28, Color.WHITE));
         content.addView(label(
             "Controle o Spotify, YouTube ou outro player do Windows sem sair da partida.",
             14, muted
@@ -614,6 +755,30 @@ final class MobileDashboard {
         return String.format(java.util.Locale.ROOT, "%d:%02d", value / 60, value % 60);
     }
 
+    /** Arena: overlay do Rocket League e painel do telefone. Não são aparelhos. */
+    private void arena(TextView info) {
+        android.widget.CheckBox overlay = new android.widget.CheckBox(activity);
+        overlay.setText("Overlay do Rocket League");
+        overlay.setTextColor(Color.WHITE);
+        Tema.seguir(overlay, (v, a) -> ((android.widget.CompoundButton) v).setButtonTintList(android.content.res.ColorStateList.valueOf(a.texto)));
+        overlay.setPadding(dp(10), dp(12), dp(10), dp(12));
+        overlay.setOnClickListener(view -> {
+            boolean enabled = overlay.isChecked();
+            run(info,
+                () -> request(endpoint(true), "/api/rocket-overlay/action",
+                    new JSONObject().put("action", enabled ? "start" : "stop")),
+                data -> {
+                    JSONObject state = data.optJSONObject("state");
+                    overlay.setChecked(state == null ? enabled : state.optBoolean("running", enabled));
+                    info.setText(data.optString("message", enabled ? "Overlay ligada." : "Overlay desligada."));
+                }
+            );
+        });
+        content.addView(overlay);
+        loadOverlayState(overlay, info);
+        content.addView(button("Abrir painel do telefone",()->select(4)));
+    }
+
     private void independentModes() {
         String[] devices={"lamp","keyboard","controller","mobile"};
         String[] names={"Abajur","Kumara","Controle PS4 · USB","Telefone"};
@@ -622,7 +787,8 @@ final class MobileDashboard {
         android.widget.Spinner[] selectors=new android.widget.Spinner[4];
         Button[] flashes=new Button[4];
         TextView[] errors=new TextView[4];
-        TextView info=label("Cada dispositivo usa seu próprio modo.",14,muted);content.addView(info);
+        TextView info=label("Cada aparelho no seu modo. Ligar, cor e brilho ficam nos cartões acima.",14,muted);content.addView(info);
+        LinearLayout modos=card("MODOS","Cada aparelho no seu modo");content.addView(modos);
         LinearLayout presets=card("PRESETS","Suas configurações");
         android.widget.AutoCompleteTextView name=new android.widget.AutoCompleteTextView(activity);
         name.setTextColor(Color.WHITE);name.setHintTextColor(muted);name.setHint("Nome do preset");name.setSingleLine(true);name.setThreshold(0);
@@ -644,12 +810,13 @@ final class MobileDashboard {
         };
         for(int i=0;i<devices.length;i++) {
             final int index=i;
-            LinearLayout item=card("DISPOSITIVO",names[i]);
+            LinearLayout item=column();item.setPadding(0,dp(10),0,dp(6));
+            item.addView(label(names[i],17,text));
             selectors[i]=new android.widget.Spinner(activity);
             java.util.ArrayList<String> labels=new java.util.ArrayList<>();
             for(String mode:modes[i])labels.add(modeLabel(mode));
             android.widget.ArrayAdapter<String> adapter=new android.widget.ArrayAdapter<>(activity,android.R.layout.simple_spinner_dropdown_item,labels);
-            selectors[i].setAdapter(adapter);selectors[i].setBackgroundTintList(android.content.res.ColorStateList.valueOf(accent));
+            selectors[i].setAdapter(adapter);Tema.seguir(selectors[i], (v, a) -> v.setBackgroundTintList(android.content.res.ColorStateList.valueOf(a.texto)));
             item.addView(selectors[i]);
             errors[i]=label("",12,Color.rgb(255,173,102));item.addView(errors[i]);
             item.addView(button("Aplicar neste dispositivo",()->{
@@ -668,23 +835,7 @@ final class MobileDashboard {
                 styleFlashButton(flashes[i], false);
                 item.addView(flashes[i]);
             }
-            if(i==0) {
-                LinearLayout power=new LinearLayout(activity);
-                for(boolean on:new boolean[]{true,false})power.addView(button(on?"Ligar":"Desligar",()->run(info,
-                    ()->request(endpoint(true),"/api/control",new JSONObject().put("action","lamp.power").put("value",on)),render)),new LinearLayout.LayoutParams(0,-2,1));
-                item.addView(power);
-                ColorWheelView wheel=new ColorWheelView(activity,hex->run(info,
-                    ()->request(endpoint(true),"/api/control",new JSONObject().put("action","lamp.color").put("value","#"+hex)),render));
-                item.addView(wheel,new LinearLayout.LayoutParams(-1,dp(180)));
-                android.widget.SeekBar brightness=new android.widget.SeekBar(activity);brightness.setMax(99);brightness.setProgress(59);
-                brightness.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener(){
-                    public void onProgressChanged(android.widget.SeekBar s,int p,boolean user){}
-                    public void onStartTrackingTouch(android.widget.SeekBar s){}
-                    public void onStopTrackingTouch(android.widget.SeekBar s){int value=s.getProgress()+1;run(info,
-                        ()->request(endpoint(true),"/api/control",new JSONObject().put("action","lamp.brightness").put("value",value)),render);}
-                });item.addView(label("Brilho",12,muted));item.addView(brightness);
-            }
-            content.addView(item);
+            modos.addView(item);
         }
         presets.addView(button("Escolher preset salvo",()->name.showDropDown()));
         for(String action:new String[]{"preset.save","preset.apply","preset.delete"}) {
@@ -694,26 +845,6 @@ final class MobileDashboard {
         }
         presets.addView(label("Diga: Nebula, ative o preset Corrida. Salvar com o mesmo nome atualiza o preset.",12,muted));
         content.addView(presets);
-        android.widget.CheckBox overlay = new android.widget.CheckBox(activity);
-        overlay.setText("Overlay do Rocket League");
-        overlay.setTextColor(Color.WHITE);
-        overlay.setButtonTintList(android.content.res.ColorStateList.valueOf(accent));
-        overlay.setPadding(dp(10), dp(12), dp(10), dp(12));
-        overlay.setOnClickListener(view -> {
-            boolean enabled = overlay.isChecked();
-            run(info,
-                () -> request(endpoint(true), "/api/rocket-overlay/action",
-                    new JSONObject().put("action", enabled ? "start" : "stop")),
-                data -> {
-                    JSONObject state = data.optJSONObject("state");
-                    overlay.setChecked(state == null ? enabled : state.optBoolean("running", enabled));
-                    info.setText(data.optString("message", enabled ? "Overlay ligada." : "Overlay desligada."));
-                }
-            );
-        });
-        content.addView(overlay);
-        loadOverlayState(overlay, info);
-        content.addView(button("Abrir painel do telefone",()->select(4)));
         content.addView(button("Atualizar estados",()->run(info,()->request(endpoint(true),"/api/control",null),render)));
         run(info,()->request(endpoint(true),"/api/control",null),render);
     }
@@ -803,7 +934,8 @@ final class MobileDashboard {
     private JSONObject request(String endpoint, String path, JSONObject payload) throws Exception {
         HttpURLConnection c = (HttpURLConnection) new URL(endpoint + path).openConnection();
         try {
-            c.setConnectTimeout(1500); c.setReadTimeout(payload != null || path.contains("discover") || path.contains("action") ? 35000 : 8000);
+            // Limite por destino: pelo Tailscale (4G) 1,5 s matava a conexao antes do aperto de mao.
+            c.setConnectTimeout(Rede.conexaoMs(endpoint)); c.setReadTimeout(payload != null || path.contains("discover") || path.contains("action") ? 35000 : 8000);
             c.setInstanceFollowRedirects(false); c.setRequestProperty("X-Nebula-Power-Token", token);
             if (payload != null) {
                 c.setRequestMethod("POST"); c.setRequestProperty("Content-Type", "application/json; charset=utf-8");

@@ -38,7 +38,12 @@ datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 a = Analysis(['gui.py'], pathex=[], binaries=binaries, datas=datas,
     hiddenimports=hiddenimports, hookspath=[], hooksconfig={}, runtime_hooks=[],
-    excludes=[], noarchive=False, optimize=0)
+    # Fora do pacote de proposito: o backend da colaboracao e mantido pelo outro
+    # agente, e a cola da Dupla importa ele no topo. Sem excluir aqui, o
+    # PyInstaller segue esse import e congela o backend de novo - tirar do
+    # hiddenimports nao bastava, a analise e transitiva.
+    excludes=['services.collaboration', 'colaboracao_ferramentas', 'memoria_dupla'],
+    noarchive=False, optimize=0)
 pyz = PYZ(a.pure)
 
 exe = EXE(pyz, a.scripts, a.binaries, a.datas, [], name='Nebula',

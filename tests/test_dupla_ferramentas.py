@@ -64,6 +64,20 @@ class ArgumentosDoCliTests(unittest.TestCase):
             self.assertIn(nome, ferramentas)
         self.assertNotEqual(ferramentas, "", "lista vazia era o modo sem acesso")
 
+    def test_ferramentas_de_escrita_e_execucao_vem_pre_aprovadas(self) -> None:
+        """--tools so diz quais existem; em dontAsk, o que nao e pre-aprovado e negado.
+
+        Sem --allowedTools o CLI negou Bash e Write em silencio
+        (permission_denials: ['Bash', 'Write']) e o acesso total era so leitura.
+        """
+        argumentos = self.executar("opus")[0][0]
+        self.assertIn("--allowedTools", argumentos)
+        aprovadas = set(argumentos[argumentos.index("--allowedTools") + 1].split(","))
+        existentes = set(argumentos[argumentos.index("--tools") + 1].split(","))
+        self.assertEqual(aprovadas, existentes)
+        for nome in ("Bash", "Edit", "Write"):
+            self.assertIn(nome, aprovadas)
+
     def test_codex_pode_escrever_no_espaco_de_trabalho(self) -> None:
         argumentos = self.executar("codex")[0][0]
         self.assertEqual(argumentos[argumentos.index("--sandbox") + 1], "workspace-write")
@@ -109,16 +123,24 @@ class GuardasTests(unittest.TestCase):
             self.assertTrue(cf.ativo())
 
     def test_o_painel_usa_o_provedor_com_acesso(self) -> None:
+        """Em projeto temporário: o ativo da Nebula é o store real da Dupla.
+
+        Abrir a Dupla nele roda ``liberar_rodadas_orfas``, que encerrava a
+        conversa em andamento com "a Nebula reiniciou" toda vez que a suíte
+        rodava no meio de uma rodada — o autopilot roda a suíte sozinho.
+        """
+        import tempfile
+
         import remote_server
 
-        remote_server._COLABORACAO["api"] = None
-        remote_server._COLABORACAO["tentado_em"] = 0.0
-        try:
-            api = remote_server.colaboracao()
-            self.assertIsInstance(api.coordinator.provider, cf.ProvedorComAcesso)
-        finally:
-            remote_server._COLABORACAO["api"] = None
-            remote_server._COLABORACAO["tentado_em"] = 0.0
+        with tempfile.TemporaryDirectory() as projeto, \
+                mock.patch.object(remote_server.STATE, "selected_project", projeto):
+            remote_server.esquecer_colaboracao()
+            try:
+                api = remote_server.colaboracao()
+                self.assertIsInstance(api.coordinator.provider, cf.ProvedorComAcesso)
+            finally:
+                remote_server.esquecer_colaboracao()
 
 
 if __name__ == "__main__":
