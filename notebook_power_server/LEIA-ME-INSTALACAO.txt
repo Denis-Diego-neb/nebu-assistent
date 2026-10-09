@@ -16,6 +16,12 @@ responder, NebulaNotebook.exe abre automaticamente neste notebook.
 Esta versao adiciona controle em grupo das Smart TVs Samsung e LG,
 incluindo abertura simultanea de links e buscas do YouTube.
 
+O instalador tambem protege o Ollama: a porta 11434 passa a aceitar somente o
+PC (192.168.15.12 e 100.92.82.41) e bloqueia os outros aparelhos da rede. Para
+aplicar essa protecao em um notebook ja instalado, ou depois de mudar o IP do
+PC, abra PROTEGER-OLLAMA.cmd e confirme o UAC. Outros IPs: defina
+NEBULA_OLLAMA_CLIENTS (separados por virgula) antes de rodar.
+
 O ar Voltas agora e controlado diretamente pelo Smart IR no Wi-Fi, sem eKasa,
 USB ou ADB. Depois desta instalacao, as proximas atualizacoes do hub sao
 recebidas e aplicadas automaticamente.

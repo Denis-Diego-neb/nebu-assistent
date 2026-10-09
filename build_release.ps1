@@ -71,6 +71,7 @@ New-Item -ItemType Directory -Path $notebookPackageDir -Force | Out-Null
 foreach ($packageFile in @(
     'NebulaPowerServer.exe', 'NebulaNotebook.exe',
     'iniciar_servicos_notebook.ps1', 'instalar_no_notebook.ps1',
+    'proteger_ollama.ps1', 'PROTEGER-OLLAMA.cmd',
     'INSTALAR-COMO-ADMINISTRADOR.cmd', 'LEIA-ME-INSTALACAO.txt'
 )) {
     $source = Join-Path $projectRoot "notebook_power_server\$packageFile"

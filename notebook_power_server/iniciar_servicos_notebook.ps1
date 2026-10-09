@@ -27,6 +27,10 @@ if ($ollama) {
 }
 
 if (Test-Path -LiteralPath $ollamaPath) {
-    $env:OLLAMA_HOST = "0.0.0.0:11434"
+    # A API do Ollama nao tem senha. Ele so escuta a rede quando o firewall
+    # restringe a porta ao PC (proteger_ollama.ps1); sem isso, fica no notebook.
+    $protegido = Get-NetFirewallRule -DisplayName "Nebula Ollama - bloquear outros aparelhos" `
+        -ErrorAction SilentlyContinue | Where-Object { $_.Enabled -eq "True" }
+    $env:OLLAMA_HOST = if ($protegido) { "0.0.0.0:11434" } else { "127.0.0.1:11434" }
     Start-Process -FilePath $ollamaPath -ArgumentList "serve" -WindowStyle Hidden
 }

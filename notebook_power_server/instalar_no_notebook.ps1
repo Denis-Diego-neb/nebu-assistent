@@ -74,8 +74,12 @@ Get-NetFirewallRule -DisplayName "Nebula Power Server" -ErrorAction SilentlyCont
 New-NetFirewallRule -DisplayName "Nebula Power Server" -Direction Inbound `
     -Action Allow -Protocol TCP -LocalPort 8766 `
     -RemoteAddress $allowedNetworks | Out-Null
-Get-NetFirewallRule -DisplayName "Nebula Ollama Server" -ErrorAction SilentlyContinue |
-    Remove-NetFirewallRule -ErrorAction SilentlyContinue
+try {
+    & (Join-Path $PSScriptRoot "proteger_ollama.ps1")
+} catch {
+    "AVISO: o Ollama nao foi protegido: $($_.Exception.Message)" | Add-Content -LiteralPath $log
+    Write-Warning "O Ollama nao foi protegido: $($_.Exception.Message). Rode PROTEGER-OLLAMA.cmd."
+}
 
 $run = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
 Remove-ItemProperty -Path $run -Name "NebulaPowerServer" -ErrorAction SilentlyContinue

@@ -12,6 +12,7 @@ instalei e não publiquei nada**. Deixei o código pronto no branch
 | `daa56cf` | Ar pelo Smart IR por voz e texto (`modules/iot/air.py`). "Desligue o ar" não abre mais a confirmação de desligar o PC, e "não desligue" passou a cancelar essa confirmação (antes confirmava, porque contém "desligue"). A Coolix liga mesmo com 16 °C salvo pelo protocolo Voltas. O painel do desktop respeita `temperature_min`. |
 | `6531426` | `VERSAO_NEBULA` 1.28.1 → 1.28.2, este arquivo e o README. |
 | `6d8ed91` | Merge de `claude/wizardly-fermi-yi6i0u` (worker MCP do notebook, 25/09), a pedido do Denis. Só acrescenta arquivos; veja a seção própria abaixo. |
+| seguinte | Ollama do notebook fechado para a rede, a pedido do Denis; veja a seção própria abaixo. |
 
 Arquivos tocados: `main.py` (só `_executar_comando_ar`, a checagem em
 `executar`, a chamada antes do abajur e a ordem da confirmação de desligar o
@@ -23,7 +24,7 @@ PC), `gui.py` (painel do ar), `ar_ir_direto.py` (`executar`), `versao.py`,
 e uma seção no `ARQUITETURA.md`. Nada em `android/`,
 `services/collaboration/`, `nebula_front/` ou `ai_sprints/`.
 
-Validação aqui, no Linux com os módulos do Windows simulados: 691 testes
+Validação aqui, no Linux com os módulos do Windows simulados: 693 testes
 (65 do worker, todos passando), 4 falhas. São as mesmas de antes da mudança e dependem do comportamento do
 Windows (`test_hub_terminal` ×2, `test_telemetry_udp`, `test_transfer_chat`).
 No PC a suíte precisa passar inteira: o `build_release.ps1` para no primeiro
@@ -81,6 +82,30 @@ teste vermelho.
 - Ar, no PC: "liga o ar", "coloca o ar em 22", "como está o ar?". "Desliga o ar"
   não pode perguntar se é para desligar o computador. Se o Smart IR não
   responder, o motivo aparece na fala e no status do painel do ar.
+
+## Ollama do notebook fechado para a rede
+
+A API do Ollama não tem senha, e o notebook a deixava em `0.0.0.0:11434` sem
+regra de firewall: qualquer aparelho da LAN ou do tailnet podia usar, baixar ou
+apagar modelos. Agora:
+
+- `notebook_power_server/proteger_ollama.ps1` (+ `PROTEGER-OLLAMA.cmd`) bloqueia
+  a porta 11434 para todos, menos os IPs do PC (`192.168.15.12` e
+  `100.92.82.41`, ou `NEBULA_OLLAMA_CLIENTS`). O bloqueio vence a permissão que
+  o Windows cria para o `ollama.exe`. O instalador chama esse script, e o
+  `build_release.ps1` põe os dois arquivos no zip do notebook.
+- `iniciar_servicos_notebook.ps1` só usa `OLLAMA_HOST=0.0.0.0` com essa regra
+  ativa; sem ela, `127.0.0.1`.
+- O revisor das sprints continua chegando ao notebook pelo PC. A troca dele
+  para o worker MCP fica com o dono de `ai_sprints/autopilot.py`; depois dela,
+  `proteger_ollama.ps1 -Clientes ""` fecha a porta de vez.
+
+**Precisa de uma ação no notebook:** a atualização automática do hub troca só
+o executável e não roda o instalador. Abra `PROTEGER-OLLAMA.cmd` no notebook
+uma vez e confirme o UAC; pela sessão SSH de administrador também funciona:
+`powershell -ExecutionPolicy Bypass -File proteger_ollama.ps1`. Confira se o PC
+ainda está em `192.168.15.12`: com outro IP, o revisor para de alcançar o
+Ollama até a regra ser refeita.
 
 ## Worker MCP do notebook
 

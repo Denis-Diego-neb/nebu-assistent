@@ -475,6 +475,13 @@ vivo. O console é liberado no loopback e, de fora da máquina, exige o
 `X-Nebula-Power-Token`. As consultas do console não entram na contagem de
 requisições do hub — do contrário encheriam justamente o log que ele mostra.
 
+A API do Ollama não tem senha, então o notebook não a deixa aberta para a rede.
+Desde a 1.28.2, o instalador restringe a porta 11434 no firewall aos IPs do PC
+(`192.168.15.12` e `100.92.82.41`, ou `NEBULA_OLLAMA_CLIENTS`), e o Ollama só
+escuta fora do próprio notebook com essa regra ativa. Em um notebook já
+instalado, ou depois de o IP do PC mudar, abra
+`notebook_power_server\PROTEGER-OLLAMA.cmd` e confirme o UAC.
+
 ## Painel de controle 1.18
 
 A Nebula agora abre em um painel minimalista escuro, tanto no Windows quanto no

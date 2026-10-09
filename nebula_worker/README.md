@@ -133,9 +133,12 @@ breaker do autopilot continua funcionando igual.
   `http://192.168.15.4:11434` (seção 19). A troca é só construir o `reviewer` em
   `ai_sprints/autopilot.py` com `NotebookWorkerChat(NotebookWorkerClient.from_env(), think=...)`.
   Não foi feita agora porque o watcher estava rodando e outro agente editava esse arquivo.
-- **Ollama exposto na rede.** Depois da troca acima, o Ollama do notebook deve escutar só em `127.0.0.1`.
-  Hoje `notebook_power_server/iniciar_servicos_notebook.ps1` usa `OLLAMA_HOST=0.0.0.0:11434`,
-  e a API do Ollama não tem autenticação: qualquer aparelho da LAN pode usar, baixar ou apagar modelos.
+- **Ollama ainda escuta a rede para o revisor.** A API do Ollama não tem autenticação.
+  Desde a 1.28.2, `notebook_power_server/proteger_ollama.ps1` (também chamado pelo instalador)
+  restringe a porta 11434 aos IPs do PC no firewall, e `iniciar_servicos_notebook.ps1` só usa
+  `0.0.0.0` com essa regra ativa. Depois da troca acima, rode
+  `proteger_ollama.ps1 -Clientes ""` no notebook para fechar a porta de vez e deixar o Ollama só
+  para o worker.
 - **Terminal do hub.** `/hub/terminal` é um shell remoto no notebook (INV-003) e deve continuar desligado
   (`terminal_policy.json` ausente).
 - **Sentido invertido das zonas de confiança.** `scripts/mcp_ssh_console.py` e o botão do hub deixam o *notebook*
