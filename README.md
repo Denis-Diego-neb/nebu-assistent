@@ -512,12 +512,12 @@ Desumidificar e ventilação Auto, Fraca, Média e Forte. A TV Philips cadastrad
 no Smart IR não é usada. O controle do ar não depende do eKasa, do Samsung,
 de USB nem de ADB e continua disponível pelo hub quando o PC gamer está desligado.
 
-A Nebula também aceita o ar por voz ou texto, com ou sem a Qwen ativa: "liga o
-ar", "desliga o ar", "coloca o ar em 22 graus", "aumenta o ar", "ar no modo
-frio", "ventilação do ar forte" e "como está o ar?". "Desliga o ar" nunca cai no
-desligamento do PC, e "não desligue" cancela essa confirmação. O desligamento
-programado continua só no hub, então frases com horário ou minutos não são
-enviadas ao ar.
+Desde a 1.28.2, a Nebula também aceita o ar por voz ou texto, com ou sem a Qwen
+ativa: "liga o ar", "desliga o ar", "coloca o ar em 22 graus", "aumenta o ar",
+"ar no modo frio", "ventilação do ar forte" e "como está o ar?". "Desliga o ar"
+nunca cai no desligamento do PC, e "não desligue" cancela essa confirmação. O
+desligamento programado continua só no hub, então frases com horário ou minutos
+não são enviadas ao ar.
 
 O controle de TVs ganhou ações simultâneas para todas as Samsung Tizen e LG
 webOS descobertas no Wi-Fi. Em **YouTube multiroom**, digite uma música, artista
