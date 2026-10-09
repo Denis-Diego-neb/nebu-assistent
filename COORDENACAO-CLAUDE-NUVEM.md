@@ -15,7 +15,8 @@ instalei e não publiquei nada**. Deixei o código pronto no branch
 | `59e7192` | Ollama do notebook fechado para a rede, a pedido do Denis; veja a seção própria abaixo. |
 | `27207d3` | Timer do ar a partir de 1 minuto (hub, APK e voz), a pedido do Denis; veja a seção própria abaixo. |
 | `4af0716` | Modo chuva para dormir (hub, PC e APK), a pedido do Denis; veja a seção própria abaixo. |
-| seguinte | Brave como navegador das telas e lanterna do celular no relâmpago com a tela apagada. |
+| `93d1b41` | Brave como navegador das telas (a lanterna do celular desse commit saiu no seguinte). |
+| seguinte | O relâmpago fica só no abajur: o Denis não quer a lanterna do celular. |
 
 Arquivos tocados: `main.py` (só `_executar_comando_ar`, a checagem em
 `executar`, a chamada antes do abajur e a ordem da confirmação de desligar o
@@ -153,9 +154,9 @@ O Denis pediu um modo para dormir com chuva. O hub coordena tudo:
   modo chuva".
 - **Celular**: seção ☰ Modo chuva e `ChuvaService` em primeiro plano
   (`mediaPlayback`), que toca o trovão sintetizado (`Trovao.java`, mesma receita
-  do Python) no instante do hub, pisca a lanterna no relâmpago só com a tela
-  apagada (`setTorchMode`, sem permissão de câmera) e manda `chuva.parar` quando
-  o celular é desbloqueado (`USER_PRESENT`).
+  do Python) no instante do hub e manda `chuva.parar` quando o celular é
+  desbloqueado (`USER_PRESENT`). O relâmpago é só do abajur: o celular não
+  acende tela nem lanterna.
 
 Validado aqui: testes do coordenador, das rotas e do PC; a página rodou no
 Chromium headless com hub e YouTube simulados (`node --test

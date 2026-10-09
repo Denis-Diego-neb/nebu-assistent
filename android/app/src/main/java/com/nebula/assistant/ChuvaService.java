@@ -10,8 +10,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.ServiceInfo;
-import android.hardware.camera2.CameraCharacteristics;
-import android.hardware.camera2.CameraManager;
 import android.media.AudioAttributes;
 import android.media.AudioFormat;
 import android.media.AudioTrack;
@@ -31,10 +29,10 @@ import java.util.HashSet;
 import java.util.Set;
 
 /**
- * Modo chuva no celular: toca os trovões junto com o notebook, pisca a lanterna
- * nos relâmpagos enquanto a tela está apagada e encerra o modo quando o celular
- * é desbloqueado. O hub é o relógio da noite; a diferença de relógio sai do
- * tempo de ida e volta da consulta mais rápida.
+ * Modo chuva no celular: toca os trovões junto com o notebook e encerra o modo
+ * quando o celular é desbloqueado. O relâmpago é só do abajur: aqui nada acende.
+ * O hub é o relógio da noite; a diferença de relógio sai do tempo de ida e volta
+ * da consulta mais rápida.
  */
 public class ChuvaService extends Service {
     private static final String CANAL = "nebula_chuva";
@@ -47,8 +45,6 @@ public class ChuvaService extends Service {
     private long melhorIdaMs = Long.MAX_VALUE;
     private volatile JSONArray trovoes = new JSONArray();
     private final Set<Long> tocados = Collections.synchronizedSet(new HashSet<>());
-    private final Set<Long> relampagos = Collections.synchronizedSet(new HashSet<>());
-    private volatile String lanterna;
     private String hub, token;
     private PowerManager.WakeLock acordado;
     private BroadcastReceiver desbloqueio;
@@ -140,11 +136,6 @@ public class ChuvaService extends Service {
         for (int i = 0; i < lista.length(); i++) {
             JSONObject trovao = lista.optJSONObject(i);
             if (trovao == null) continue;
-            long luz = Math.round(trovao.optDouble("instante") * 1000);
-            JSONArray flashes = trovao.optJSONArray("flashes");
-            if (flashes != null && agoraHub >= luz - 1500 && agoraHub <= luz + 500 && relampagos.add(luz)) {
-                new Thread(() -> piscar(luz, flashes), "NebulaRelampago").start();
-            }
             long som = Math.round(trovao.optDouble("som") * 1000);
             // Sintetiza 1,5 s antes; atrasado demais, deixa passar.
             if (agoraHub < som - 1500 || agoraHub > som + 2000 || !tocados.add(som)) continue;
@@ -180,48 +171,6 @@ public class ChuvaService extends Service {
         } finally {
             if (faixa != null) faixa.release();
         }
-    }
-
-    /** Relâmpago na lanterna, só com a tela apagada: nada além do necessário acende. */
-    private void piscar(long luzHub, JSONArray flashes) {
-        try {
-            long espera = luzHub - (System.currentTimeMillis() + deslocamentoMs);
-            if (espera > 0) Thread.sleep(espera);
-            PowerManager energia = (PowerManager) getSystemService(POWER_SERVICE);
-            String camera = lanterna();
-            if (!rodando || energia.isInteractive() || camera == null) return;
-            CameraManager cameras = (CameraManager) getSystemService(CAMERA_SERVICE);
-            try {
-                for (int i = 0; i < flashes.length(); i++) {
-                    JSONArray passo = flashes.optJSONArray(i);
-                    if (passo == null) continue;
-                    cameras.setTorchMode(camera, passo.optBoolean(1));
-                    Thread.sleep(Math.max(0, Math.round(passo.optDouble(0) * 1000)));
-                }
-            } finally {
-                cameras.setTorchMode(camera, false);
-            }
-        } catch (Exception ignorado) {
-            // Câmera ocupada ou sem flash: o trovão continua só com som.
-        }
-    }
-
-    /** Primeira câmera com flash, ou null quando o aparelho não tem lanterna. */
-    private String lanterna() {
-        if (lanterna == null) {
-            String encontrada = "";
-            try {
-                CameraManager cameras = (CameraManager) getSystemService(CAMERA_SERVICE);
-                for (String id : cameras.getCameraIdList()) {
-                    if (Boolean.TRUE.equals(cameras.getCameraCharacteristics(id).get(CameraCharacteristics.FLASH_INFO_AVAILABLE))) {
-                        encontrada = id;
-                        break;
-                    }
-                }
-            } catch (Exception ignorado) { }
-            lanterna = encontrada;
-        }
-        return lanterna.isEmpty() ? null : lanterna;
     }
 
     private void encerrarPeloCelular() {

@@ -143,7 +143,7 @@ class CoordenadorChuvaTests(unittest.TestCase):
         estado = self.chuva.estado()
         self.assertTrue(estado["trovoes"])
         self.assertTrue(all(t["som"] > estado["agora"] for t in estado["trovoes"]))
-        self.assertTrue(all(t["flashes"][0][1] and t["flashes"][-1] == [0.0, False] for t in estado["trovoes"]))
+        self.assertNotIn("flashes", estado["trovoes"][0])  # o relâmpago é só do abajur
         json.dumps(estado)  # vai ao celular como JSON
         self.assertTrue(all(t["instante"] <= estado["agora"] + 15 * 60 for t in estado["trovoes"]))
         self.assertTrue(estado["ar"]["ligado"])

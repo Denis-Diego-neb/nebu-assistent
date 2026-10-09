@@ -540,9 +540,8 @@ diga "ative o modo chuva". O hub do notebook coordena a noite:
   ponto. Cada tela se realinha sozinha pelo relógio do hub, e nenhuma das duas
   dorme nem apaga a tela.
 - O abajur fica apagado. Em cada trovão, ele pisca em branco, como um relâmpago.
-  O som vem depois, no notebook e no celular ao mesmo tempo. Com a tela do
-  celular apagada, a lanterna dele pisca junto, sem acender a tela; virado para
-  baixo, ele clareia o teto.
+  O som vem depois, no notebook e no celular ao mesmo tempo. O relâmpago é só
+  do abajur: o celular não acende tela nem lanterna.
 - O Attack Shark X98HE acompanha a tela (Ambilight com as sete cores do
   firmware).
 - O ar começa ligado e alterna 1 hora ligado, 1 hora desligado.
