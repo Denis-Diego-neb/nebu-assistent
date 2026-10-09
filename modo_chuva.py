@@ -61,6 +61,8 @@ class Trovao:
             "som": round(self.som, 3),
             "intensidade": self.intensidade,
             "semente": self.semente,
+            # O celular repete o relâmpago na lanterna quando a tela está apagada.
+            "flashes": [[segundos, acesa] for segundos, acesa in self.flashes],
         }
 
 

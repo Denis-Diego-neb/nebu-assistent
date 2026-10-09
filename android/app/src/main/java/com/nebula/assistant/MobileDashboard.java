@@ -307,6 +307,7 @@ final class MobileDashboard {
         cartao.addView(acoes);
         cartao.addView(estado);
         cartao.addView(label("Depois de iniciar, bloqueie o celular: ao desbloquear, o modo termina sozinho. "
+            + "Com a tela apagada, a lanterna pisca nos relâmpagos; virado para baixo, ela clareia o teto. "
             + "Deixe-o carregando, porque ele fica acordado para tocar os trovões.", 12, muted));
         content.addView(cartao);
         run(estado, () -> request(endpoint(false), "/chuva", null), dados -> {

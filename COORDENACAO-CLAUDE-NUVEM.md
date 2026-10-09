@@ -14,7 +14,8 @@ instalei e não publiquei nada**. Deixei o código pronto no branch
 | `6d8ed91` | Merge de `claude/wizardly-fermi-yi6i0u` (worker MCP do notebook, 25/09), a pedido do Denis. Só acrescenta arquivos; veja a seção própria abaixo. |
 | `59e7192` | Ollama do notebook fechado para a rede, a pedido do Denis; veja a seção própria abaixo. |
 | `27207d3` | Timer do ar a partir de 1 minuto (hub, APK e voz), a pedido do Denis; veja a seção própria abaixo. |
-| seguinte | Modo chuva para dormir (hub, PC e APK), a pedido do Denis; veja a seção própria abaixo. |
+| `4af0716` | Modo chuva para dormir (hub, PC e APK), a pedido do Denis; veja a seção própria abaixo. |
+| seguinte | Brave como navegador das telas e lanterna do celular no relâmpago com a tela apagada. |
 
 Arquivos tocados: `main.py` (só `_executar_comando_ar`, a checagem em
 `executar`, a chamada antes do abajur e a ordem da confirmação de desligar o
@@ -28,7 +29,7 @@ Modo chuva em `MobileDashboard.java`, `ChuvaService.java`, `Trovao.java`, o
 ícone em `Icone.java` e permissões novas no manifest. Em `nebula_front/`, só o
 arquivo novo `chuva.html`. Nada em `services/collaboration/` ou `ai_sprints/`.
 
-Validação aqui, no Linux com os módulos do Windows simulados: 727 testes
+Validação aqui, no Linux com os módulos do Windows simulados: 730 testes
 (65 do worker, todos passando), 4 falhas. São as mesmas de antes da mudança e dependem do comportamento do
 Windows (`test_hub_terminal` ×2, `test_telemetry_udp`, `test_transfer_chat`).
 No PC a suíte precisa passar inteira: o `build_release.ps1` para no primeiro
@@ -143,16 +144,18 @@ O Denis pediu um modo para dormir com chuva. O hub coordena tudo:
   retoma a sessão se reiniciar na mesma noite.
 - **Telas** (`nebula_front/chuva.html`): YouTube em loop, posição calculada pelo
   relógio do hub, realinha acima de 1,2 s. Abre com `front_window.abrir_midia`
-  (perfil próprio, `--kiosk`, som sem clique) e `TelaChuva` segura a máquina
-  acordada.
+  (Brave primeiro, perfil próprio com reprodução automática liberada, `--kiosk`)
+  e `TelaChuva` segura a máquina acordada. O Denis pediu o Brave: o
+  `encontrar_navegador` agora o prefere em tudo, inclusive no console do hub.
 - **PC** (`main.py`): recebe `chuva.iniciar` do hub com a URL (só aceita a página
   do hub em IP não público), passa para o modo manual, abre o vídeo e põe o
   Attack Shark em Ambilight (`AttackSharkX98HE.enviar_rgb`). Voz: "ative/pare o
   modo chuva".
 - **Celular**: seção ☰ Modo chuva e `ChuvaService` em primeiro plano
   (`mediaPlayback`), que toca o trovão sintetizado (`Trovao.java`, mesma receita
-  do Python) no instante do hub e manda `chuva.parar` quando o celular é
-  desbloqueado (`USER_PRESENT`).
+  do Python) no instante do hub, pisca a lanterna no relâmpago só com a tela
+  apagada (`setTorchMode`, sem permissão de câmera) e manda `chuva.parar` quando
+  o celular é desbloqueado (`USER_PRESENT`).
 
 Validado aqui: testes do coordenador, das rotas e do PC; a página rodou no
 Chromium headless com hub e YouTube simulados (`node --test

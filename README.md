@@ -540,16 +540,19 @@ diga "ative o modo chuva". O hub do notebook coordena a noite:
   ponto. Cada tela se realinha sozinha pelo relógio do hub, e nenhuma das duas
   dorme nem apaga a tela.
 - O abajur fica apagado. Em cada trovão, ele pisca em branco, como um relâmpago.
-  O som vem depois, no notebook e no celular ao mesmo tempo.
+  O som vem depois, no notebook e no celular ao mesmo tempo. Com a tela do
+  celular apagada, a lanterna dele pisca junto, sem acender a tela; virado para
+  baixo, ele clareia o teto.
 - O Attack Shark X98HE acompanha a tela (Ambilight com as sete cores do
   firmware).
 - O ar começa ligado e alterna 1 hora ligado, 1 hora desligado.
 
 O modo termina quando o celular é desbloqueado, em **Encerrar** ou com "pare o
 modo chuva". O ar e o abajur ficam como estão. Durante o modo, o celular fica
-acordado para tocar os trovões: deixe-o carregando. A janela do vídeo usa um
-perfil próprio do navegador, sem login no YouTube; se o YouTube recusar o vídeo
-fora do site, escolha outro link.
+acordado para tocar os trovões: deixe-o carregando. A janela do vídeo abre no
+Brave (no Chrome ou no Edge, se não houver Brave), num perfil próprio com som
+liberado; o bloqueador do Brave costuma segurar os anúncios do YouTube. Se o
+YouTube recusar o vídeo fora do site, escolha outro link.
 
 O controle de TVs ganhou ações simultâneas para todas as Samsung Tizen e LG
 webOS descobertas no Wi-Fi. Em **YouTube multiroom**, digite uma música, artista

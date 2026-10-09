@@ -1288,26 +1288,13 @@ def _classificar_linha(linha: str) -> str:
     return "ok"
 
 
-NAVEGADORES = (
-    r"Google\Chrome\Application\chrome.exe",
-    r"Microsoft\Edge\Application\msedge.exe",
-    r"BraveSoftware\Brave-Browser\Application\brave.exe",
-)
-
-
 def _encontrar_navegador() -> str:
-    for nome in ("chrome.exe", "msedge.exe", "brave.exe", "chromium.exe"):
-        achado = shutil.which(nome)
-        if achado:
-            return achado
-    bases = [os.environ.get(v, "") for v in
-             ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA")]
-    for base in filter(None, bases):
-        for sufixo in NAVEGADORES:
-            caminho = Path(base) / sufixo
-            if caminho.is_file():
-                return str(caminho)
-    return ""
+    """Mesmo navegador das telas da Nebula: Brave primeiro."""
+    try:
+        import front_window
+    except ImportError:
+        return ""
+    return front_window.encontrar_navegador() or ""
 
 
 def abrir_modo_estrelas(server: ThreadingHTTPServer) -> bool:
