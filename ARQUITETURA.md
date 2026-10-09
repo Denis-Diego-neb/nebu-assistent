@@ -144,6 +144,15 @@ encaminhamento, troca de rota e transporte HTTP, sem acionar dispositivos reais.
 5. `services/network.py`: escolha de rota LAN/remota;
 6. host: composicao das dependencias e ciclo de vida do processo.
 
+## Worker MCP do notebook
+
+O primeiro marco do [MCP_GOAL](docs/MCP_GOAL.md) esta em `nebula_worker/` (notebook)
+e `core/mcp/clients/notebook_worker.py` (PC). O PC assina um ticket Ed25519 por job;
+o notebook expoe seis tools (`worker.health`, `capabilities`, `submit`, `status`,
+`result`, `cancel`), executa somente `model:qwen_edge:generate` no Ollama local e
+nao tem shell nem acesso remoto a arquivos. Instalacao, modelo de seguranca e
+desvios declarados: [nebula_worker/README.md](nebula_worker/README.md).
+
 O Ambilight e o segundo passo incremental: suas tres tools sao registradas em
 `modules/iot/ambilight.py` e chamadas diretamente. O ciclo de vida de hardware
 ainda fica no host por callbacks; assim, a mudanca do contrato nao ocorre junto
