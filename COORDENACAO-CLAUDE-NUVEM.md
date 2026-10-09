@@ -16,7 +16,7 @@ instalei e não publiquei nada**. Deixei o código pronto no branch
 | `27207d3` | Timer do ar a partir de 1 minuto (hub, APK e voz), a pedido do Denis; veja a seção própria abaixo. |
 | `4af0716` | Modo chuva para dormir (hub, PC e APK), a pedido do Denis; veja a seção própria abaixo. |
 | `93d1b41` | Brave como navegador das telas (a lanterna do celular desse commit saiu no seguinte). |
-| seguinte | O relâmpago fica só no abajur: o Denis não quer a lanterna do celular. |
+| `31f14da` | O relâmpago fica só no abajur: o Denis não quer a lanterna do celular. |
 
 Arquivos tocados: `main.py` (só `_executar_comando_ar`, a checagem em
 `executar`, a chamada antes do abajur e a ordem da confirmação de desligar o
@@ -48,11 +48,15 @@ teste vermelho.
    git merge --no-ff origin/ccr-b43604ed-9vvu8j
    ```
 
-   Se houver alterações locais não commitadas em `main.py`, `gui.py`,
-   `ar_ir_direto.py`, `versao.py` ou `README.md`, combine com o Denis antes do
-   merge. Se o `versao.py` local já estiver em 1.28.2 ou acima, use um número
-   maior que o instalado: o deploy do hub espera o `/health` responder a versão
-   nova.
+   Se houver alterações locais não commitadas em algum arquivo que o branch
+   altera, combine com o Denis antes do merge. A lista exata:
+
+   ```powershell
+   git diff --name-only e565406 origin/ccr-b43604ed-9vvu8j
+   ```
+
+   Se o `versao.py` local já estiver em 1.28.2 ou acima, use um número maior
+   que o instalado: o deploy do hub espera o `/health` responder a versão nova.
 3. Exporte o token do escopo do usuário neste shell. O Gradle embute o token no
    APK, e o `deploy_notebook.ps1` aborta sem ele — e o deploy só roda depois de
    o EXE e o APK já estarem compilados:
@@ -77,6 +81,8 @@ teste vermelho.
 
    Se a cópia do `NebulaPowerServer.exe` falhar por arquivo em uso, procure o
    processo antigo parado (em 23/09 havia um vivo sem escutar porta).
+5. No notebook, uma vez: abra `PROTEGER-OLLAMA.cmd` e confirme o UAC (veja a
+   seção do Ollama abaixo). A atualização automática do hub não faz isso.
 
 ## Conferência
 
