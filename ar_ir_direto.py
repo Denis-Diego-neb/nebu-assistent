@@ -357,6 +357,14 @@ class ControleArDireto:
                 if ventilacao not in FANS:
                     raise ValueError("Velocidade do ar invalida.")
                 proximo.update({"power": True, "fan": ventilacao})
+            if (
+                acao != "temperature"
+                and int(proximo["temperature"]) < 17
+                and supports_temperature(self._codes.get("power_on"))
+            ):
+                # O protocolo Voltas salvava 16 graus; a Coolix aprendida vai
+                # de 17 a 30 e recusaria até ligar o ar com esse estado.
+                proximo["temperature"] = 17
             try:
                 self._enviar(proximo, acao)
             except ErroAr as exc:

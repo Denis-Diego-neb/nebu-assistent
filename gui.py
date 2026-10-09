@@ -847,6 +847,7 @@ class InterfaceNebula:
         ar = estado.get("air") if isinstance(estado.get("air"), dict) else {}
         if hasattr(self, "casa_ar_temperatura"):
             self.casa_temperatura = int(ar.get("temperature", 17))
+            self.casa_temperatura_min = int(ar.get("temperature_min", 16))
             self.casa_ar_temperatura.configure(text=f"{self.casa_temperatura} °C")
             ligado = bool(ar.get("power"))
             modo_ar = str(ar.get("mode_label") or "")
@@ -876,7 +877,7 @@ class InterfaceNebula:
         ar.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
         tk.Label(ar, text="AR-CONDICIONADO VOLTAS", bg=fundo, fg=AZUL_CLARO,
                  font=("Segoe UI Semibold", 12)).pack(anchor="w")
-        tk.Label(ar, text="Controle espelhado do eKasa no Samsung conectado por USB",
+        tk.Label(ar, text="Smart IR direto pelo Wi-Fi, sem eKasa nem USB",
                  bg=fundo, fg="#aaaab0", font=("Segoe UI", 10)).pack(anchor="w", pady=(2, 14))
         energia = tk.Frame(ar, bg=fundo)
         energia.pack(fill="x")
@@ -890,6 +891,7 @@ class InterfaceNebula:
         temperatura.pack(fill="x", pady=(16, 10))
         self._botao_painel(temperatura, "−", "air.temperature", 16).pack(side="left")
         self.casa_temperatura = 17
+        self.casa_temperatura_min = 16
         self.casa_ar_temperatura = tk.Label(
             temperatura, text="17 °C", bg=fundo, fg="white",
             font=("Segoe UI Semibold", 34),
@@ -899,7 +901,7 @@ class InterfaceNebula:
         mais.pack(side="right")
         temperatura.winfo_children()[0].configure(
             command=lambda: self._acionar_controle_desktop(
-                "air.temperature", max(16, self.casa_temperatura - 1)
+                "air.temperature", max(self.casa_temperatura_min, self.casa_temperatura - 1)
             )
         )
         mais.configure(command=lambda: self._acionar_controle_desktop(

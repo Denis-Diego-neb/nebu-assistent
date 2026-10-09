@@ -28,6 +28,7 @@ from abajur_wifi import ErroAbajur, interpretar_comandos_abajur
 from abajur_tuya import ConfiguracaoTuya, ControleAbajurTuya
 from modules.iot.lights import ControleAbajur, executar_pedidos_abajur
 from modules.iot.ambilight import selecionar_saidas_teclado
+from modules.iot.air import executar_pedidos_ar, interpretar_comando_ar
 from ar_ir_direto import ControleArDireto
 from device_presets import (
     Presets,
@@ -1927,6 +1928,21 @@ class Nebula:
                 except (ErroAbajur, OSError):
                     pass
 
+    def _executar_comando_ar(self, comando: str) -> bool:
+        # O nome de um app ou o texto de uma nota pode citar o ar sem ser pedido.
+        if self.comando_pendente not in (None, "confirmar_desligar_pc"):
+            return False
+        pedidos = interpretar_comando_ar(comando)
+        if not pedidos:
+            return False
+        mensagem = executar_pedidos_ar(pedidos, self._controle_ar).mensagem
+        if self.comando_pendente == "confirmar_desligar_pc":
+            # Um pedido ao ar nunca confirma o desligamento do PC.
+            self.comando_pendente = None
+            mensagem += " O desligamento do PC foi cancelado."
+        self.saida.falar(mensagem)
+        return True
+
     def _executar_comando_abajur(self, comando: str) -> bool:
         pedidos = interpretar_comandos_abajur(comando)
         if not pedidos:
@@ -2210,6 +2226,8 @@ class Nebula:
                 or interpretar_comando_correcao(comando.lower()) is not None
                 or interpretar_comando_contexto(comando.lower()) is not None
                 or voice_preset(comando.lower()) is not None
+                # O contrato da Qwen não tem ações para o ar.
+                or interpretar_comando_ar(normalizado) is not None
             )
             if qwen_ativa() and not local:
                 return self._consultar_qwen(comando.strip())
@@ -2327,6 +2345,11 @@ class Nebula:
             self._informar_status_modo_ambilight()
             return True
 
+        # Antes do desligamento do PC: "desligue o ar" chega a 0,85 de
+        # semelhança com "desligue o pc".
+        if self._executar_comando_ar(comando):
+            return True
+
         if self._executar_comando_abajur(comando):
             return True
 
@@ -2339,6 +2362,11 @@ class Nebula:
         if self.comando_pendente == "confirmar_fechar_aplicativo":
             return self._confirmar_fechar_aplicativo(comando)
         if self.comando_pendente == "confirmar_desligar_pc":
+            # A negação vem primeiro: "não desligue" contém "desligue".
+            if corresponde_intencao(comando, ("nao", "cancelar", "cancela", "deixa pra la"), 0.78):
+                self.comando_pendente = None
+                self.saida.falar("Desligamento cancelado. O PC continua acordado.")
+                return True
             if corresponde_intencao(comando, ("sim", "confirmo", "pode desligar", "desligue"), 0.78):
                 self.comando_pendente = None
                 self.saida.falar("Certo. Salvou tudo, espero. Desligando o computador.")
@@ -2349,10 +2377,6 @@ class Nebula:
                     )
                 else:
                     print("DESLIGAR PC")
-                return True
-            if corresponde_intencao(comando, ("nao", "cancelar", "cancela", "deixa pra la"), 0.78):
-                self.comando_pendente = None
-                self.saida.falar("Desligamento cancelado. O PC continua acordado.")
                 return True
             self.saida.falar("Preciso de um sim ou cancelar antes de desligar o computador.")
             return True

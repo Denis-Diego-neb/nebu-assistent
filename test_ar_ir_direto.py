@@ -15,6 +15,8 @@ from ar_ir_direto import (
     EmissorIrConfirmado,
     ErroAr,
 )
+from ir_coolix import decode
+from test_ir_coolix import captured_frame
 
 
 class DispositivoFalso:
@@ -118,6 +120,20 @@ class ArIrDiretoTests(unittest.TestCase):
             device.send_button("AQACAAMA")
             self.assertEqual(payload.call_args.args[1], {"1": "study_key", "13": 0, "7": "AQACAAMA"})
         device.close()
+
+    def test_coolix_liga_mesmo_com_16_graus_salvos_pelo_voltas(self):
+        with TemporaryDirectory() as pasta:
+            estado = Path(pasta) / "estado.json"
+            estado.write_text(json.dumps({"power": False, "temperature": 16}), encoding="utf-8")
+            codigos = Path(pasta) / "codigos.json"
+            codigos.write_text(
+                json.dumps({"power_on": captured_frame(), "power_off": captured_frame()}),
+                encoding="utf-8",
+            )
+            controle = ControleArDireto(self.config, estado, DispositivoFalso, codes_file=codigos)
+            controle.executar("power", True)
+            self.assertEqual(bytes(decode(DispositivoFalso.ultimo_codigo)[1]).hex(), "b24d5fa000ff")
+            self.assertEqual(controle.estado()["temperature"], 17)
 
     def test_envio_falho_nao_muda_estado(self):
         with TemporaryDirectory() as pasta:

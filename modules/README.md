@@ -66,3 +66,11 @@ Teste isolado, sem acionar o abajur:
   o parser de voz usa esses mesmos métodos, então há uma única implementação.
 - Volume sem janela do YouTube aberta agora devolve `ok: false` pela tool (antes
   o adaptador legado respondia sucesso mesmo sem ajustar nada).
+
+## Quinta etapa: ar-condicionado
+
+- `modules/iot/air.py` traduz frases faladas em pedidos ao Smart IR (`power`,
+  `temperature`, `mode`, `fan` e ajustes relativos) e monta a resposta. A
+  transmissão continua em `ar_ir_direto.py`, o mesmo driver dos painéis.
+- `main.py` consulta o módulo antes do abajur e do desligamento do PC, e também
+  antes da Qwen, cujo contrato não tem ações para o ar.
