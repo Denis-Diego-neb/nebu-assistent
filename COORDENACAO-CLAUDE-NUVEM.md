@@ -13,7 +13,8 @@ instalei e não publiquei nada**. Deixei o código pronto no branch
 | `6531426` | `VERSAO_NEBULA` 1.28.1 → 1.28.2, este arquivo e o README. |
 | `6d8ed91` | Merge de `claude/wizardly-fermi-yi6i0u` (worker MCP do notebook, 25/09), a pedido do Denis. Só acrescenta arquivos; veja a seção própria abaixo. |
 | `59e7192` | Ollama do notebook fechado para a rede, a pedido do Denis; veja a seção própria abaixo. |
-| seguinte | Timer do ar a partir de 1 minuto (hub, APK e voz), a pedido do Denis; veja a seção própria abaixo. |
+| `27207d3` | Timer do ar a partir de 1 minuto (hub, APK e voz), a pedido do Denis; veja a seção própria abaixo. |
+| seguinte | Modo chuva para dormir (hub, PC e APK), a pedido do Denis; veja a seção própria abaixo. |
 
 Arquivos tocados: `main.py` (só `_executar_comando_ar`, a checagem em
 `executar`, a chamada antes do abajur e a ordem da confirmação de desligar o
@@ -22,11 +23,12 @@ PC), `gui.py` (painel do ar), `ar_ir_direto.py` (`executar`), `versao.py`,
 `test_main_ar.py`, `test_ar_ir_direto.py`). O merge do worker só cria
 `nebula_worker/`, `core/mcp/`, `core/jobs/`, `core/capabilities/`,
 `docs/MCP_GOAL.md`, `scripts/notebook_worker_*.py`, `tests/test_worker_*.py`
-e uma seção no `ARQUITETURA.md`. Em `android/`, só o passo do timer em
-`MobileDashboard.java`. Nada em `services/collaboration/`, `nebula_front/` ou
-`ai_sprints/`.
+e uma seção no `ARQUITETURA.md`. Em `android/`: o passo do timer e a seção
+Modo chuva em `MobileDashboard.java`, `ChuvaService.java`, `Trovao.java`, o
+ícone em `Icone.java` e permissões novas no manifest. Em `nebula_front/`, só o
+arquivo novo `chuva.html`. Nada em `services/collaboration/` ou `ai_sprints/`.
 
-Validação aqui, no Linux com os módulos do Windows simulados: 700 testes
+Validação aqui, no Linux com os módulos do Windows simulados: 727 testes
 (65 do worker, todos passando), 4 falhas. São as mesmas de antes da mudança e dependem do comportamento do
 Windows (`test_hub_terminal` ×2, `test_telemetry_udp`, `test_transfer_chat`).
 No PC a suíte precisa passar inteira: o `build_release.ps1` para no primeiro
@@ -126,6 +128,41 @@ de 30. Agora:
 O timer de 10 minutos só funciona depois que o hub novo estiver no notebook
 (`deploy_notebook.ps1`) e o APK novo no A71. Na conferência, programe 10
 minutos pelo app e veja o cartão do ar mostrar "Desligamento agendado".
+
+## Modo chuva para dormir
+
+O Denis pediu um modo para dormir com chuva. O hub coordena tudo:
+
+- **Hub** (`notebook_power_server/coordenador_chuva.py`, rotas em `power_server.py`):
+  `chuva.iniciar` / `chuva.parar` em `POST /control`, estado em `GET /chuva`
+  (rota direta: `/control` consulta o PC antes de responder e estragaria a medida
+  de relógio do celular). A sessão tem instante zero, semente dos trovões e uma
+  chave que abre só `/hub/chuva.html` e `/hub/chuva/estado` enquanto o modo dura.
+  O hub abre a página em tela cheia no notebook, toca o trovão (`winsound`),
+  pisca o abajur (`ControleAbajurTuya.relampago`), alterna o ar a cada hora e
+  retoma a sessão se reiniciar na mesma noite.
+- **Telas** (`nebula_front/chuva.html`): YouTube em loop, posição calculada pelo
+  relógio do hub, realinha acima de 1,2 s. Abre com `front_window.abrir_midia`
+  (perfil próprio, `--kiosk`, som sem clique) e `TelaChuva` segura a máquina
+  acordada.
+- **PC** (`main.py`): recebe `chuva.iniciar` do hub com a URL (só aceita a página
+  do hub em IP não público), passa para o modo manual, abre o vídeo e põe o
+  Attack Shark em Ambilight (`AttackSharkX98HE.enviar_rgb`). Voz: "ative/pare o
+  modo chuva".
+- **Celular**: seção ☰ Modo chuva e `ChuvaService` em primeiro plano
+  (`mediaPlayback`), que toca o trovão sintetizado (`Trovao.java`, mesma receita
+  do Python) no instante do hub e manda `chuva.parar` quando o celular é
+  desbloqueado (`USER_PRESENT`).
+
+Validado aqui: testes do coordenador, das rotas e do PC; a página rodou no
+Chromium headless com hub e YouTube simulados (`node --test
+tests/test_chuva_pagina.cjs`, precisa do Playwright): duas telas a 0,01 s, com
+o relógio do hub 5 s adiantado. O Java compila com `javac` contra o
+`android.jar` 35. **Não testado em hardware**: som, abajur, teclado, YouTube de
+verdade e o serviço no A71. Na conferência, comece o modo pelo celular e
+confira: as duas telas com o mesmo vídeo, o abajur apagando, um trovão em até
+2,5 minutos (relâmpago no abajur e som no notebook e no celular) e o fim do modo
+ao desbloquear o celular.
 
 ## Worker MCP do notebook
 

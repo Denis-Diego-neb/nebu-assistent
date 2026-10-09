@@ -55,10 +55,20 @@ try:
     from .tv_control import TvError, TvManager
     from .universal_control import UniversalController
     from .air_timer import AirTimer
+    from .coordenador_chuva import CoordenadorChuva
 except ImportError:
     from tv_control import TvError, TvManager
     from universal_control import UniversalController
     from air_timer import AirTimer
+    from coordenador_chuva import CoordenadorChuva
+
+try:
+    from modo_chuva import TelaChuva, tocar_wav
+except ImportError:
+    TelaChuva = None  # type: ignore[assignment,misc]
+
+    def tocar_wav(_dados: bytes) -> None:
+        return None
 
 try:
     from abajur_tuya import ConfiguracaoTuya, ControleAbajurTuya
@@ -373,6 +383,17 @@ class HomeBrain:
         self.lamp = None
         self.air = ControleArDireto() if ControleArDireto is not None else None
         self.air_timer = AirTimer(self.air, Path(os.environ.get('LOCALAPPDATA', str(Path.home()))) / 'Nebula' / 'air_timer.json')
+        self.chuva = CoordenadorChuva(
+            caminho=Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "Nebula" / "modo_chuva.json",
+            ar=self.air,
+            timer_ar=self.air_timer,
+            lampada=lambda: self.lamp,
+            tocar=tocar_wav,
+            tela=TelaChuva() if TelaChuva is not None else None,
+            url_tela=lambda chave: f"http://127.0.0.1:{PORT}/hub/chuva.html?k={chave}",
+            avisar_pc=lambda acao, valor: self._pc("POST", {"action": acao, "value": valor}),
+            url_pc=self._url_chuva_para_pc,
+        )
         if ConfiguracaoTuya is not None and ControleAbajurTuya is not None:
             try:
                 config = ConfiguracaoTuya.carregar()
@@ -430,6 +451,23 @@ class HomeBrain:
                 self.state["fallback"] = "failed"
                 self.state["fallback_message"] = str(exc)
 
+    @staticmethod
+    def _url_chuva_para_pc(chave: str) -> str | None:
+        """Endereço deste hub visto pelo PC: o IP local da rota até ele."""
+        for endpoint in PC_AGENT_URLS:
+            host = urlparse(endpoint).hostname
+            if not host:
+                continue
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sonda:
+                    sonda.connect((host, 9))
+                    proprio = sonda.getsockname()[0]
+            except OSError:
+                continue
+            if proprio and not proprio.startswith("0."):
+                return f"http://{proprio}:{PORT}/hub/chuva.html?k={chave}"
+        return None
+
     def _pc(self, method: str, data: dict[str, object] | None = None) -> dict[str, object]:
         body = None if data is None else json.dumps(data).encode("utf-8")
         last_error: Exception | None = None
@@ -478,10 +516,22 @@ class HomeBrain:
         if self.air is not None:
             estado["air"] = self.air.estado()
             estado["air"]["timer"] = self.air_timer.status()
+        estado["chuva"] = self.chuva.estado()
         return estado
 
     def action(self, action: str, value: object) -> dict[str, object]:
         action = str(action).strip().casefold()
+        if action in {"chuva.iniciar", "chuva.parar"}:
+            dados = value if isinstance(value, dict) else {}
+            origem = str(dados.get("origem") or "celular")
+            if action == "chuva.iniciar":
+                video = dados.get("video", value if isinstance(value, str) else "")
+                resultado = self.chuva.iniciar(video, origem)
+                mensagem = "Modo chuva ativado: vídeo nas telas, abajur apagado e ar em ciclos de 1 hora."
+            else:
+                resultado = self.chuva.parar(origem)
+                mensagem = "Modo chuva encerrado."
+            return {"ok": True, "message": mensagem, "chuva": resultado}
         if action.startswith("air."):
             if self.air is None:
                 raise RuntimeError("O Smart IR ainda nao foi configurado no notebook.")
@@ -1014,7 +1064,17 @@ class Handler(BaseHTTPRequestHandler):
                     "application/json; charset=utf-8")
 
     def servir_hub(self, path: str) -> None:
-        if not self.hub_autorizado():
+        if path in ("/hub/chuva.html", "/hub/chuva/estado"):
+            # A página do modo chuva abre no PC e no notebook sem o token: a
+            # chave da sessão vale só para ela e expira quando o modo acaba.
+            chave = parse_qs(urlparse(self.path).query).get("k", [""])[0]
+            if not (self.hub_autorizado() or BRAIN.chuva.autoriza(chave)):
+                self.enviar_json(401, {"error": "Não autorizado"})
+                return
+            if path == "/hub/chuva/estado":
+                self.enviar_json(200, BRAIN.chuva.estado_tela())
+                return
+        elif not self.hub_autorizado():
             self.enviar_json(401, {"error": "Não autorizado"})
             return
         if path == "/hub":
@@ -1084,7 +1144,7 @@ class Handler(BaseHTTPRequestHandler):
                 "ok": True,
                 "service": "Nebula Home Hub",
                 "version": VERSAO_NEBULA,
-                "features": ["wake_on_lan", "smart_tvs", "tv_groups", "youtube_multiroom", "central_brain", "lamp", "air_ir_local", "pc_agent", "pc_launch_command", "auto_update", "notebook_fallback", "assistant_update", "universal_control", "home_assistant", "sprint_monitor", "mcp_audit"],
+                "features": ["wake_on_lan", "smart_tvs", "tv_groups", "youtube_multiroom", "central_brain", "lamp", "air_ir_local", "pc_agent", "pc_launch_command", "auto_update", "notebook_fallback", "assistant_update", "universal_control", "home_assistant", "sprint_monitor", "mcp_audit", "rain_mode"],
             })
         elif path == "/pc/command":
             self.respond(200, {"command": BRAIN.current_pc_command()})
@@ -1092,6 +1152,10 @@ class Handler(BaseHTTPRequestHandler):
             self.respond(200, MONITOR.sprint_snapshot())
         elif path == "/control":
             self.respond(200, {"state": BRAIN.status()})
+        elif path == "/chuva":
+            # Rota direta: /control consulta o PC antes de responder, e o celular
+            # mede a diferença de relógio pelo tempo de ida e volta.
+            self.respond(200, BRAIN.chuva.estado())
         elif path == "/tvs":
             self.respond(200, {"tvs": TVS.list()})
         elif path == "/universal/devices":
@@ -1529,6 +1593,7 @@ if __name__ == "__main__":
         raise SystemExit("NEBULA_POWER_TOKEN precisa ter pelo menos 24 caracteres.")
     http_server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     BRAIN.air_timer.start()
+    BRAIN.chuva.iniciar_loop()
     MONITOR.record_event(f"Servidor iniciado em 0.0.0.0:{PORT}.")
     # O modo estrelas é o único acesso do hub. A janela Tk só entra se não
     # houver navegador, e NEBULA_HUB_JANELA=1 força ela de volta.

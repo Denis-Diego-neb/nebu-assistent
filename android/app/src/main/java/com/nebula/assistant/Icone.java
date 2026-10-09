@@ -15,7 +15,7 @@ import android.view.View;
  * têm o mesmo traço, o mesmo tamanho e a cor da nebulosa.</p>
  */
 final class Icone extends View {
-    enum Tipo { MENU, INICIO, DISPOSITIVOS, AUDIO, DUPLA, PAINEL, ARENA, CONFIG, FECHAR }
+    enum Tipo { MENU, INICIO, DISPOSITIVOS, AUDIO, DUPLA, PAINEL, ARENA, CONFIG, CHUVA, FECHAR }
 
     private final Tipo tipo;
     private final Paint traco = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -96,6 +96,19 @@ final class Icone extends View {
                     linha(c, 12 + (float) Math.cos(a) * 6.5f, 12 + (float) Math.sin(a) * 6.5f,
                             12 + (float) Math.cos(a) * 9.2f, 12 + (float) Math.sin(a) * 9.2f);
                 }
+                break;
+            case CHUVA:
+                // Nuvem com três gotas: o modo chuva para dormir.
+                caminho.moveTo(7, 14.5f);
+                caminho.cubicTo(4.2f, 14.5f, 3.5f, 10.5f, 6.4f, 9.6f);
+                caminho.cubicTo(7, 6.2f, 12, 5, 13.8f, 8.2f);
+                caminho.cubicTo(16.5f, 7, 19.6f, 8.8f, 19.2f, 11.8f);
+                caminho.cubicTo(21, 12.6f, 20.4f, 14.5f, 18.5f, 14.5f);
+                caminho.close();
+                c.drawPath(caminho, traco);
+                linha(c, 8.5f, 17, 7.5f, 19.5f);
+                linha(c, 12.5f, 17, 11.5f, 19.5f);
+                linha(c, 16.5f, 17, 15.5f, 19.5f);
                 break;
             case ARENA:
                 // Frasco de laboratório: arena e experimentos.

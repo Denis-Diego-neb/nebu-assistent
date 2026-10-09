@@ -80,6 +80,39 @@ def abrir(url: str, *, tela_cheia: bool = False, largura: int = 1280, altura: in
     return "navegador"
 
 
+PERFIL_MIDIA = PERFIL.with_name("midia-profile")
+
+
+def abrir_midia(url: str) -> subprocess.Popen | None:
+    """Abre ``url`` em tela cheia, sem bordas, com som sem precisar de clique.
+
+    Usa um perfil próprio: assim a janela é um processo separado, as opções
+    valem mesmo com o Espaço aberto e fechar o processo fecha só ela. Sem
+    nenhum Chromium, cai no navegador padrão e devolve ``None``.
+    """
+    navegador = encontrar_navegador()
+    if navegador:
+        try:
+            PERFIL_MIDIA.mkdir(parents=True, exist_ok=True)
+            return subprocess.Popen(
+                [
+                    navegador,
+                    f"--app={url}",
+                    f"--user-data-dir={PERFIL_MIDIA}",
+                    "--no-first-run",
+                    "--no-default-browser-check",
+                    "--kiosk",
+                    "--autoplay-policy=no-user-gesture-required",
+                ],
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                close_fds=True,
+            )
+        except OSError:
+            pass
+    webbrowser.open(url)
+    return None
+
+
 if __name__ == "__main__":  # Permite testar a janela sem subir a interface inteira.
     destino = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8765/espaco/"
     print(abrir(destino, tela_cheia="--tela-cheia" in sys.argv))

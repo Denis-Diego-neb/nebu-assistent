@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import ctypes
 import difflib
+import ipaddress
 import json
 import os
 import queue
@@ -22,7 +23,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Iterator, Protocol
 from urllib.error import HTTPError
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse
 from urllib.request import Request, urlopen
 
 from app_launcher import Aplicativo, IniciadorAplicativos
@@ -32,6 +33,7 @@ from modules.iot.lights import ControleAbajur, executar_pedidos_abajur
 from modules.iot.ambilight import selecionar_saidas_teclado
 from modules.iot.air import executar_pedidos_ar, interpretar_comando_ar
 from ar_ir_direto import ControleArDireto
+from modo_chuva import TelaChuva
 from device_presets import (
     Presets,
     MODES as DEVICE_MODES,
@@ -66,6 +68,7 @@ from modo_ambilight import CapturadorJanelaNetflix, ErroModoAmbilight, ModoAmbil
 from lightbar_ds4 import DS4Lightbar, DS4LightbarError
 from modo_rpm import ErroModoBoost, ErroModoRPM, ModoBoost, ModoRPM
 from teclado_openrgb import OpenRGBKeyboardError, TecladoKumaraOpenRGB, criar_teclado_kumara
+from teclado_attack_shark import AttackSharkError, AttackSharkX98HE
 from teclado_evision import TecladoKumaraUSB
 from notas import criar_e_abrir_nota
 from reconhecedor_musica import identificar_musica
@@ -299,6 +302,22 @@ def interpretar_comando_modo_ambilight(comando: str) -> str | None:
     ):
         return "iniciar"
     return None
+
+
+def interpretar_comando_modo_chuva(comando: str) -> str | None:
+    """Reconhece pedidos para o modo chuva para dormir."""
+    texto = normalizar_texto(comando).strip(" ,.!?")
+    if not re.search(r"\bmodo chuva\b|\bchuva (?:pra|para) dormir\b", texto):
+        return None
+    palavras = set(texto.split())
+    # "para" só é verbo no começo ("para o modo chuva"); em "chuva para dormir"
+    # é preposição.
+    if palavras & {"pare", "parar", "desative", "desativa", "desligue", "desliga",
+                   "encerre", "encerra", "saia", "sair", "cancele", "cancela"} or re.match(
+        r"(?:nebula\s+)?para\b(?! dormir)", texto
+    ):
+        return "parar"
+    return "iniciar"
 
 
 def extrair_chamada(texto: str) -> tuple[bool, str]:
@@ -665,6 +684,8 @@ class Nebula:
         self._controle_abajur: ControleAbajur | None = None
         self._controle_abajur_lock = threading.RLock()
         self._controle_ar = ControleArDireto()
+        self._tela_chuva = TelaChuva()
+        self._teclado_chuva: ModoAmbilight | None = None
         self._modo_rpm: ModoRPM | None = None
         self._modo_rpm_lock = threading.RLock()
         self._modo_boost: ModoBoost | None = None
@@ -1322,6 +1343,8 @@ class Nebula:
             elif acao in {"air.power", "air.temperature", "air.mode", "air.fan"}:
                 resultado_ar = self._controle_ar.executar(acao.removeprefix("air."), valor)
                 mensagem = str(resultado_ar.get("message", "Comando enviado ao ar."))
+            elif acao in {"chuva.iniciar", "chuva.parar"}:
+                mensagem = self._controle_chuva(acao, valor)
             else:
                 raise ValueError("Acao de controle invalida.")
         return {"ok": True, "message": mensagem, "state": self.estado_controle()}
@@ -1948,13 +1971,18 @@ class Nebula:
         self.saida.falar(mensagem)
         return True
 
-    @staticmethod
-    def _agendar_desligamento_ar(minutos: int) -> None:
+    @classmethod
+    def _agendar_desligamento_ar(cls, minutos: int) -> None:
         """Programa o timer no hub, que desliga o ar mesmo com o PC desligado."""
+        cls._acao_no_hub("air.timer", minutos)
+
+    @staticmethod
+    def _acao_no_hub(acao: str, valor: object) -> dict[str, object]:
+        """Envia uma ação ao hub do notebook e devolve a resposta dele."""
         token = os.environ.get("NEBULA_POWER_TOKEN", "").strip()
         if not token:
             raise RuntimeError("Defina NEBULA_POWER_TOKEN para a Nebula falar com o hub do notebook.")
-        corpo = json.dumps({"action": "air.timer", "value": minutos}).encode("utf-8")
+        corpo = json.dumps({"action": acao, "value": valor}).encode("utf-8")
         for endpoint in NOTEBOOK_ENDPOINTS:
             pedido = Request(
                 endpoint + "/control", data=corpo, method="POST",
@@ -1964,9 +1992,10 @@ class Nebula:
                 },
             )
             try:
-                with urlopen(pedido, timeout=3) as resposta:
-                    resposta.read()
-                return
+                # A primeira resposta do modo chuva pode esperar a pesquisa no YouTube.
+                with urlopen(pedido, timeout=30 if acao.startswith("chuva.") else 3) as resposta:
+                    dados = json.loads(resposta.read().decode("utf-8") or "{}")
+                return dados if isinstance(dados, dict) else {}
             except HTTPError as exc:
                 # O hub respondeu e recusou; outro endereço daria a mesma resposta.
                 try:
@@ -1974,9 +2003,74 @@ class Nebula:
                 except (OSError, ValueError, AttributeError):
                     erro = None
                 raise RuntimeError(str(erro or f"O hub recusou o pedido ({exc.code}).")) from exc
-            except OSError:
+            except (OSError, ValueError):
                 continue
         raise RuntimeError("O hub do notebook não respondeu. Confira se ele está ligado.")
+
+    def _controle_chuva(self, acao: str, valor: object) -> str:
+        """Pedidos do hub: o PC mostra o vídeo e o Attack Shark acompanha a tela."""
+        if acao == "chuva.parar":
+            self._tela_chuva.fechar()
+            self._parar_teclado_chuva()
+            return "Modo chuva encerrado no PC."
+        url = valor.get("url") if isinstance(valor, dict) else None
+        if not self._url_chuva_valida(url):
+            raise ValueError("Endereço da tela do modo chuva inválido.")
+        # Solta o abajur para os relâmpagos do hub e o Attack Shark para o
+        # Ambilight, como o hub já faz antes de mexer na lâmpada.
+        self.executar_controle("mode", "manual")
+        self._tela_chuva.abrir(str(url))
+        aviso = self._iniciar_teclado_chuva()
+        return "Modo chuva no PC: vídeo em tela cheia" + (
+            f"; teclado de fora: {aviso}" if aviso else "; o Attack Shark acompanha a tela."
+        )
+
+    @staticmethod
+    def _url_chuva_valida(url: object) -> bool:
+        """Só abre a página do modo chuva servida por um hub da rede local."""
+        if not isinstance(url, str) or len(url) > 300:
+            return False
+        partes = urlparse(url)
+        if partes.scheme != "http" or partes.path != "/hub/chuva.html":
+            return False
+        if not re.fullmatch(r"k=[A-Za-z0-9_-]{16,64}", partes.query or ""):
+            return False
+        try:
+            return not ipaddress.ip_address(partes.hostname or "").is_global
+        except ValueError:
+            return False
+
+    def _iniciar_teclado_chuva(self) -> str | None:
+        self._parar_teclado_chuva()
+        try:
+            teclado = AttackSharkX98HE()
+        except (AttackSharkError, OSError) as exc:
+            return str(exc)
+        modo = ModoAmbilight(lambda _r, _g, _b: None, saida_secundaria=teclado.enviar_rgb)
+        modo.definir_restauracao(teclado.close)
+        try:
+            modo.iniciar()
+        except (ErroModoAmbilight, AttackSharkError, OSError, ValueError) as exc:
+            modo.parar()
+            teclado.close()
+            return str(exc)
+        self._teclado_chuva = modo
+        return None
+
+    def _parar_teclado_chuva(self) -> None:
+        modo, self._teclado_chuva = self._teclado_chuva, None
+        if modo is not None:
+            modo.parar()
+
+    def _pedir_modo_chuva(self, pedido: str) -> bool:
+        acao = "chuva.iniciar" if pedido == "iniciar" else "chuva.parar"
+        try:
+            resposta = self._acao_no_hub(acao, {"origem": "pc"})
+        except RuntimeError as exc:
+            self.saida.falar(f"Não consegui falar com o hub para o modo chuva. {exc}")
+            return True
+        self.saida.falar(str(resposta.get("message") or "Pedido enviado ao hub."))
+        return True
 
     def _executar_comando_abajur(self, comando: str) -> bool:
         pedidos = interpretar_comandos_abajur(comando)
@@ -2261,8 +2355,9 @@ class Nebula:
                 or interpretar_comando_correcao(comando.lower()) is not None
                 or interpretar_comando_contexto(comando.lower()) is not None
                 or voice_preset(comando.lower()) is not None
-                # O contrato da Qwen não tem ações para o ar.
+                # O contrato da Qwen não tem ações para o ar nem para o modo chuva.
                 or interpretar_comando_ar(normalizado) is not None
+                or interpretar_comando_modo_chuva(normalizado) is not None
             )
             if qwen_ativa() and not local:
                 return self._consultar_qwen(comando.strip())
@@ -2379,6 +2474,10 @@ class Nebula:
         if comando_ambilight == "status":
             self._informar_status_modo_ambilight()
             return True
+
+        comando_chuva = interpretar_comando_modo_chuva(comando)
+        if comando_chuva and self.comando_pendente is None:
+            return self._pedir_modo_chuva(comando_chuva)
 
         # Antes do desligamento do PC: "desligue o ar" chega a 0,85 de
         # semelhança com "desligue o pc".

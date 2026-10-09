@@ -74,6 +74,22 @@ class AttackSharkTests(unittest.TestCase):
         self.assertEqual(restauracao[1:8], original)
         self.assertFalse(backend.dispositivo.aberto)
 
+    def test_ambilight_escolhe_cor_pronta_e_so_envia_quando_muda(self) -> None:
+        backend = BackendFalso()
+        teclado = AttackSharkX98HE(hid_backend=backend)
+        envios = backend.dispositivo.envios
+        antes = len(envios)
+        teclado.enviar_rgb(20, 30, 90)        # chuva escura e azulada
+        self.assertEqual(envios[-1][3:5], bytes([2, 2]))  # nível 2, preset azul
+        teclado.enviar_rgb(22, 31, 92)        # quadro quase igual: nada vai ao teclado
+        self.assertEqual(len(envios), antes + 1)
+        teclado.enviar_rgb(250, 240, 20)      # relâmpago amarelado na tela
+        self.assertEqual(envios[-1][3:5], bytes([4, 3]))
+        teclado.enviar_rgb(0, 0, 0)
+        self.assertEqual(envios[-1][3], 1)
+        with self.assertRaises(ValueError):
+            teclado.enviar_rgb(300, 0, 0)
+
     def test_cor_base_escolhe_preset_real_do_firmware(self) -> None:
         backend = BackendFalso()
         teclado = AttackSharkX98HE(hid_backend=backend)

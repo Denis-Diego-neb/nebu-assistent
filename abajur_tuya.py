@@ -531,6 +531,39 @@ class ControleAbajurTuya:
             *canais,
         )
 
+    def relampago(
+        self,
+        sequencia: list[tuple[float, bool]] | tuple[tuple[float, bool], ...],
+        aguardar: Callable[[float], None] = time.sleep,
+    ) -> None:
+        """Pisca branco no brilho máximo e termina apagada: o raio do modo chuva.
+
+        Cada item é (segundos, acesa). Um comando por mudança, já com energia,
+        modo e cor juntos, numa conexão persistente para não pagar o aperto de
+        mão Tuya entre os flashes. Mesmo com falha, tenta deixar a luz apagada.
+        """
+        self._parar_ritmo_ativo()
+        energia, modo, cor = (self._DPS_TIPO_B[nome] for nome in ("energia", "modo", "cor"))
+        with self._lock:
+            self._consultar_estado(atualizar=False)
+            dispositivo = self._obter_dispositivo()
+            self._definir_conexao_persistente(True)
+            acesa = False
+            try:
+                for duracao, ligar in sequencia:
+                    dados = {energia: True, modo: "colour", cor: "0000000003e8"} if ligar else {energia: False}
+                    self._chamar("piscar o relâmpago", dispositivo.set_multiple_values, dados)
+                    acesa = bool(ligar)
+                    aguardar(max(0.0, float(duracao)))
+            finally:
+                if acesa:
+                    try:
+                        dispositivo.set_multiple_values({energia: False})
+                    except Exception:
+                        pass
+                self._definir_conexao_persistente(False)
+                self._estado_inicial = None
+
     def iniciar_ritmo_navegador(
         self,
         cor_fixa: tuple[int, int, int] | None = None,

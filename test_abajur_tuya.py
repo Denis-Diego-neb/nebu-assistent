@@ -117,6 +117,41 @@ class ControleTuyaTest(unittest.TestCase):
             version=3.5,
         )
 
+    def test_relampago_pisca_branco_e_termina_apagado(self) -> None:
+        class BulboComLote(BulboFalso):
+            def set_multiple_values(self, dados: dict[str, object]) -> object:
+                self.eventos.append(("lote", dict(dados)))
+                return self._resposta(dict(dados))
+
+        pausas: list[float] = []
+        with patch("abajur_tuya.tinytuya", SimpleNamespace(BulbDevice=BulboComLote)):
+            controle = ControleAbajurTuya(self.config)
+            controle.relampago(((0.1, True), (0.05, False), (0.2, True), (0.0, False)), pausas.append)
+
+        bulbo = BulboFalso.instancias[0]
+        lotes = [evento[1] for evento in bulbo.eventos if isinstance(evento, tuple) and evento[0] == "lote"]
+        acesa = {"20": True, "21": "colour", "24": "0000000003e8"}
+        self.assertEqual(lotes, [acesa, {"20": False}, acesa, {"20": False}])
+        self.assertEqual(pausas, [0.1, 0.05, 0.2, 0.0])
+        self.assertEqual([e for e in bulbo.eventos if isinstance(e, tuple) and e[0] == "persist"],
+                         [("persist", True), ("persist", False)])
+
+    def test_relampago_com_falha_ainda_tenta_apagar(self) -> None:
+        class BulboQueFalha(BulboFalso):
+            def set_multiple_values(self, dados: dict[str, object]) -> object:
+                self.eventos.append(("lote", dict(dados)))
+                if len([e for e in self.eventos if isinstance(e, tuple) and e[0] == "lote"]) == 2:
+                    return {"Error": "Network Error: Device Unreachable", "Err": "905"}
+                return self._resposta(dict(dados))
+
+        with patch("abajur_tuya.tinytuya", SimpleNamespace(BulbDevice=BulboQueFalha)):
+            controle = ControleAbajurTuya(self.config)
+            with self.assertRaises(ErroAbajur):
+                controle.relampago(((0.1, True), (0.1, True), (0.0, False)), lambda _s: None)
+
+        lotes = [e[1] for e in BulboFalso.instancias[0].eventos if isinstance(e, tuple) and e[0] == "lote"]
+        self.assertEqual(lotes[-1], {"20": False})
+
     def test_ritmo_tuya_inicia_com_sensibilidade_maior(self) -> None:
         controle = ControleAbajurTuya(self.config)
         self.assertEqual(controle._intensidade_ritmo, INTENSIDADE_RITMO_PADRAO)

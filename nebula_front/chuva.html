@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nebula · Chuva</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; cursor: none; }
+  #video { position: fixed; inset: 0; width: 100vw; height: 100vh; border: 0; }
+  #aviso {
+    position: fixed; left: 50%; bottom: 6vh; transform: translateX(-50%);
+    font: 15px system-ui, sans-serif; color: #b9b4c8; background: rgba(10, 10, 16, .72);
+    padding: 10px 16px; border-radius: 10px; display: none; cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<div id="video"></div>
+<div id="aviso" role="status"></div>
+<script>
+'use strict';
+// O hub é o relógio da noite: todas as telas calculam a mesma posição do
+// vídeo a partir do instante zero da sessão e se realinham sozinhas.
+const chave = new URLSearchParams(location.search).get('k') || '';
+const aviso = document.getElementById('aviso');
+let estado = null, player = null, pronto = false, duracao = 0;
+let deslocamento = 0, melhorIda = Infinity, inicioAgendado = null;
+
+function avisar(texto) {
+  aviso.textContent = texto;
+  aviso.style.display = texto ? 'block' : 'none';
+}
+
+async function consultar() {
+  const ida = Date.now();
+  const resposta = await fetch('chuva/estado?k=' + encodeURIComponent(chave), { cache: 'no-store' });
+  const volta = Date.now();
+  if (!resposta.ok) throw new Error('hub ' + resposta.status);
+  const dados = await resposta.json();
+  // Guarda a medição de relógio da consulta mais rápida: menos erro de rede.
+  if (volta - ida <= melhorIda * 1.5) {
+    melhorIda = Math.min(melhorIda, volta - ida);
+    deslocamento = dados.agora * 1000 - (ida + volta) / 2;
+  }
+  return dados;
+}
+
+function decorrido() {
+  return (Date.now() + deslocamento) / 1000 - estado.inicio;
+}
+
+function alvo() {
+  const passado = decorrido();
+  if (passado < 0) return 0;
+  return duracao > 0 ? passado % duracao : passado;
+}
+
+function alinhar() {
+  if (!pronto || !estado || !estado.ativo) return;
+  const passado = decorrido();
+  if (passado < 0) {
+    // Folga do início: todas as telas esperam o mesmo instante zero.
+    if (inicioAgendado === null) {
+      player.seekTo(0, true);
+      player.pauseVideo();
+      inicioAgendado = setTimeout(() => { inicioAgendado = null; player.playVideo(); }, -passado * 1000);
+    }
+    return;
+  }
+  const situacao = player.getPlayerState();
+  if (situacao !== YT.PlayerState.PLAYING && situacao !== YT.PlayerState.BUFFERING) {
+    player.seekTo(alvo(), true);
+    player.playVideo();
+    return;
+  }
+  if (Math.abs(player.getCurrentTime() - alvo()) > 1.2) player.seekTo(alvo(), true);
+}
+
+function criarPlayer() {
+  player = new YT.Player('video', {
+    videoId: estado.video_id,
+    playerVars: {
+      autoplay: 1, controls: 0, disablekb: 1, fs: 0, rel: 0, iv_load_policy: 3,
+      modestbranding: 1, playsinline: 1, origin: location.origin,
+    },
+    events: {
+      onReady: () => {
+        pronto = true;
+        duracao = player.getDuration() || 0;
+        player.unMute();
+        player.setVolume(100);
+        alinhar();
+        // Sem permissão de som automático, segue mudo e pede um clique.
+        setTimeout(() => {
+          if (player.getPlayerState() !== YT.PlayerState.PLAYING) {
+            player.mute();
+            player.playVideo();
+            avisar('O navegador bloqueou o som. Clique aqui para ouvir a chuva.');
+          }
+        }, 4000);
+      },
+      onStateChange: (evento) => {
+        if (evento.data === YT.PlayerState.PLAYING && !duracao) duracao = player.getDuration() || 0;
+        if (evento.data === YT.PlayerState.ENDED) alinhar();
+      },
+      onError: () => avisar('O YouTube recusou este vídeo nesta página. Escolha outro link no celular.'),
+    },
+  });
+}
+
+aviso.addEventListener('click', () => {
+  if (player && pronto) { player.unMute(); player.setVolume(100); }
+  avisar('');
+});
+
+async function acompanhar() {
+  try {
+    const anterior = estado;
+    estado = await consultar();
+    if (!estado.ativo) {
+      if (player && pronto) player.stopVideo();
+      avisar('Modo chuva encerrado.');
+      return;
+    }
+    if (!player && window.YT && YT.Player) criarPlayer();
+    else if (player && pronto && anterior && anterior.video_id !== estado.video_id) {
+      duracao = 0;
+      player.loadVideoById(estado.video_id);
+    }
+    alinhar();
+  } catch (erro) {
+    // Hub fora por alguns segundos: o vídeo continua; tenta de novo.
+  }
+}
+
+window.onYouTubeIframeAPIReady = () => { if (estado && estado.ativo && !player) criarPlayer(); };
+
+async function manterTelaAcesa() {
+  try { if ('wakeLock' in navigator) await navigator.wakeLock.request('screen'); } catch (erro) { }
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) manterTelaAcesa(); });
+
+const api = document.createElement('script');
+api.src = 'https://www.youtube.com/iframe_api';
+document.head.appendChild(api);
+manterTelaAcesa();
+acompanhar();
+setInterval(acompanhar, 15000);
+setInterval(alinhar, 4000);
+</script>
+</body>
+</html>

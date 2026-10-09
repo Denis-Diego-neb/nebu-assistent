@@ -184,6 +184,29 @@ class AttackSharkX98HE:
             self._enviar(pacote)
             self._ultimo_nivel = nivel
 
+    def enviar_rgb(self, vermelho: int, verde: int, azul: int) -> None:
+        """Ambilight no X98HE: a cor pronta mais próxima e o brilho pela luminância.
+
+        O firmware só aceita as sete cores prontas e quatro níveis de brilho;
+        set_boost já descarta quadros que não mudam o nível, então o teclado
+        só recebe comando quando a cena muda de verdade.
+        """
+        canais = (vermelho, verde, azul)
+        if not all(isinstance(canal, int) and 0 <= canal <= 255 for canal in canais):
+            raise ValueError("A cor do teclado precisa ser um RGB valido.")
+        maior = max(canais)
+        with self._lock:
+            if maior:
+                # Compara só a matiz: uma cena escura e azulada continua azul.
+                indice = self._preset_mais_proximo(
+                    tuple(round(canal * 255 / maior) for canal in canais)  # type: ignore[arg-type]
+                )
+                if indice != self._indice_cor:
+                    self._indice_cor = indice
+                    self._cor_base = CORES_PRESET_X98HE[indice]
+                    self._ultimo_nivel = None
+            self.set_boost(max(1, round(maior * 100 / 255)))
+
     def restaurar(self) -> None:
         with self._lock:
             if not self._aberto or self._original is None or self._ultimo_nivel is None:

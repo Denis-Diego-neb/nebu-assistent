@@ -19,6 +19,9 @@ if ($LASTEXITCODE -ne 0) { throw "Os testes do hub doméstico falharam." }
     --hidden-import abajur_wifi `
     --hidden-import tinytuya `
     --hidden-import ar_ir_direto `
+    --hidden-import modo_chuva `
+    --hidden-import front_window `
+    --hidden-import coordenador_chuva `
     --hidden-import versao `
     --hidden-import front_assets `
     --add-data "$(Join-Path $projectRoot 'nebula_front');nebula_front" `

@@ -34,9 +34,9 @@ final class MobileDashboard {
     private final LinearLayout pagina;
     private android.widget.FrameLayout menu;
     private LinearLayout alvoAparelhos;
-    private final TextView[] titulosMenu = new TextView[7];
+    private final TextView[] titulosMenu = new TextView[8];
     /** Seção de cada item do menu; -1 abre a Dupla e -2 o painel completo. */
-    private final int[] secaoMenu = {0, 1, 3, -1, -2, 2, 5};
+    private final int[] secaoMenu = {0, 1, 3, 6, -1, -2, 2, 5};
     final Button powerButton;
     final Button espacoButton;
     final TextView status;
@@ -161,6 +161,7 @@ final class MobileDashboard {
             {Icone.Tipo.INICIO, "Início", "Seu PC e os atalhos."},
             {Icone.Tipo.DISPOSITIVOS, "Dispositivos e modos", "Abajur, TVs, ar e o modo de cada aparelho."},
             {Icone.Tipo.AUDIO, "Áudio", "O que está tocando no PC."},
+            {Icone.Tipo.CHUVA, "Modo chuva", "Chuva nas telas, trovões, abajur e ar para dormir."},
             {Icone.Tipo.DUPLA, "Dupla", "Claude e o GPT: conversa, desenvolvimento e limites."},
             {Icone.Tipo.PAINEL, "Painel completo", "Projetos, memória e terminal do PC."},
             {Icone.Tipo.ARENA, "Arena e laboratório", "Overlay, painel do telefone e sensor Wi-Fi."},
@@ -269,6 +270,73 @@ final class MobileDashboard {
         if (index == 3) { media(); return; }
         if (index == 4) { turboPanel(); return; }
         if (index == 5) { configuracao(); return; }
+        if (index == 6) { chuva(); return; }
+    }
+
+    /** Modo chuva: vídeo nas telas, trovões no notebook e aqui, abajur e ar em ciclos. */
+    private void chuva() {
+        content.addView(label("Modo chuva", 28, Color.WHITE));
+        content.addView(label("Chuva do YouTube no PC e no notebook, trovões no notebook e neste celular, "
+            + "relâmpagos no abajur, Attack Shark acompanhando a tela e o ar 1 hora ligado, 1 hora desligado.", 14, muted));
+        LinearLayout cartao = card("PARA DORMIR", "Chuva e trovões");
+        TextView estado = label("Consultando o hub…", 14, text);
+        EditText link = new EditText(activity);
+        link.setSingleLine(true);
+        link.setHint("Link do YouTube (vazio: som de chuva para dormir)");
+        link.setTextColor(Color.WHITE);
+        link.setHintTextColor(muted);
+        cartao.addView(link);
+        LinearLayout acoes = new LinearLayout(activity);
+        acoes.addView(primaryButton("Iniciar", () -> run(estado,
+            () -> request(endpoint(false), "/control", new JSONObject().put("action", "chuva.iniciar")
+                .put("value", new JSONObject().put("video", link.getText().toString().trim()).put("origem", "celular"))),
+            resultado -> {
+                pedirNotificacoes();
+                ChuvaService.iniciar(activity, hubEndpoint, token);
+                pintarChuva(estado, resultado.optJSONObject("chuva"), resultado.optString("message"));
+            })), new LinearLayout.LayoutParams(0, dp(48), 1));
+        LinearLayout.LayoutParams lpEncerrar = new LinearLayout.LayoutParams(0, dp(48), 1);
+        lpEncerrar.setMargins(dp(10), 0, 0, 0);
+        acoes.addView(button("Encerrar", () -> run(estado,
+            () -> request(endpoint(false), "/control", new JSONObject().put("action", "chuva.parar")
+                .put("value", new JSONObject().put("origem", "celular"))),
+            resultado -> {
+                ChuvaService.parar(activity);
+                pintarChuva(estado, resultado.optJSONObject("chuva"), resultado.optString("message"));
+            })), lpEncerrar);
+        cartao.addView(acoes);
+        cartao.addView(estado);
+        cartao.addView(label("Depois de iniciar, bloqueie o celular: ao desbloquear, o modo termina sozinho. "
+            + "Deixe-o carregando, porque ele fica acordado para tocar os trovões.", 12, muted));
+        content.addView(cartao);
+        run(estado, () -> request(endpoint(false), "/chuva", null), dados -> {
+            // Iniciado pelo PC ou por outro celular: este também passa a tocar os trovões.
+            if (dados.optBoolean("ativo") && !ChuvaService.ativo()) ChuvaService.iniciar(activity, hubEndpoint, token);
+            pintarChuva(estado, dados, null);
+        });
+    }
+
+    private void pintarChuva(TextView estado, JSONObject chuva, String mensagem) {
+        String prefixo = mensagem == null || mensagem.isEmpty() ? "" : mensagem + "\n";
+        if (chuva == null || !chuva.optBoolean("ativo")) { estado.setText(prefixo + "Modo chuva desligado."); return; }
+        JSONArray proximos = chuva.optJSONArray("trovoes");
+        StringBuilder texto = new StringBuilder(prefixo).append("Ativo. Trovões nos próximos 15 minutos: ")
+            .append(proximos == null ? 0 : proximos.length()).append('.');
+        JSONObject ar = chuva.optJSONObject("ar");
+        if (ar != null) texto.append("\nAr ").append(ar.optBoolean("ligado") ? "ligado" : "desligado")
+            .append(" até ").append(java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT)
+                .format(new java.util.Date((long) (ar.optDouble("proxima_troca") * 1000)))).append('.');
+        JSONObject erros = chuva.optJSONObject("erros");
+        if (erros != null) for (java.util.Iterator<String> chaves = erros.keys(); chaves.hasNext(); )
+            texto.append("\n").append(erros.optString(chaves.next()));
+        estado.setText(texto);
+    }
+
+    private void pedirNotificacoes() {
+        if (android.os.Build.VERSION.SDK_INT >= 33 && activity.checkSelfPermission("android.permission.POST_NOTIFICATIONS")
+            != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            activity.requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 23);
+        }
     }
 
     /** Configuração: por enquanto, o token da ponte do Gemini à mão para copiar. */

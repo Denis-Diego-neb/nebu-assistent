@@ -530,6 +530,27 @@ andam de 10 em 10 minutos até 1 hora e de 30 em 30 depois; pela Nebula, diga
 "desliga o ar em 10 minutos", "em meia hora" ou "daqui a 1h30", e "cancela o
 timer do ar". Horários ("às 22h") não são agendados.
 
+## Modo chuva para dormir 1.28.2
+
+No celular, abra ☰ → **Modo chuva** e toque em **Iniciar**. Se quiser, cole antes
+um link do YouTube; vazio, o hub pesquisa "som de chuva para dormir". No PC,
+diga "ative o modo chuva". O hub do notebook coordena a noite:
+
+- O PC e o notebook mostram o mesmo vídeo em tela cheia, em loop e no mesmo
+  ponto. Cada tela se realinha sozinha pelo relógio do hub, e nenhuma das duas
+  dorme nem apaga a tela.
+- O abajur fica apagado. Em cada trovão, ele pisca em branco, como um relâmpago.
+  O som vem depois, no notebook e no celular ao mesmo tempo.
+- O Attack Shark X98HE acompanha a tela (Ambilight com as sete cores do
+  firmware).
+- O ar começa ligado e alterna 1 hora ligado, 1 hora desligado.
+
+O modo termina quando o celular é desbloqueado, em **Encerrar** ou com "pare o
+modo chuva". O ar e o abajur ficam como estão. Durante o modo, o celular fica
+acordado para tocar os trovões: deixe-o carregando. A janela do vídeo usa um
+perfil próprio do navegador, sem login no YouTube; se o YouTube recusar o vídeo
+fora do site, escolha outro link.
+
 O controle de TVs ganhou ações simultâneas para todas as Samsung Tizen e LG
 webOS descobertas no Wi-Fi. Em **YouTube multiroom**, digite uma música, artista
 ou cole um link e escolha **Tocar em todas** para abrir o mesmo vídeo nas TVs
