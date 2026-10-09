@@ -12,7 +12,8 @@ instalei e não publiquei nada**. Deixei o código pronto no branch
 | `daa56cf` | Ar pelo Smart IR por voz e texto (`modules/iot/air.py`). "Desligue o ar" não abre mais a confirmação de desligar o PC, e "não desligue" passou a cancelar essa confirmação (antes confirmava, porque contém "desligue"). A Coolix liga mesmo com 16 °C salvo pelo protocolo Voltas. O painel do desktop respeita `temperature_min`. |
 | `6531426` | `VERSAO_NEBULA` 1.28.1 → 1.28.2, este arquivo e o README. |
 | `6d8ed91` | Merge de `claude/wizardly-fermi-yi6i0u` (worker MCP do notebook, 25/09), a pedido do Denis. Só acrescenta arquivos; veja a seção própria abaixo. |
-| seguinte | Ollama do notebook fechado para a rede, a pedido do Denis; veja a seção própria abaixo. |
+| `59e7192` | Ollama do notebook fechado para a rede, a pedido do Denis; veja a seção própria abaixo. |
+| seguinte | Timer do ar a partir de 1 minuto (hub, APK e voz), a pedido do Denis; veja a seção própria abaixo. |
 
 Arquivos tocados: `main.py` (só `_executar_comando_ar`, a checagem em
 `executar`, a chamada antes do abajur e a ordem da confirmação de desligar o
@@ -21,10 +22,11 @@ PC), `gui.py` (painel do ar), `ar_ir_direto.py` (`executar`), `versao.py`,
 `test_main_ar.py`, `test_ar_ir_direto.py`). O merge do worker só cria
 `nebula_worker/`, `core/mcp/`, `core/jobs/`, `core/capabilities/`,
 `docs/MCP_GOAL.md`, `scripts/notebook_worker_*.py`, `tests/test_worker_*.py`
-e uma seção no `ARQUITETURA.md`. Nada em `android/`,
-`services/collaboration/`, `nebula_front/` ou `ai_sprints/`.
+e uma seção no `ARQUITETURA.md`. Em `android/`, só o passo do timer em
+`MobileDashboard.java`. Nada em `services/collaboration/`, `nebula_front/` ou
+`ai_sprints/`.
 
-Validação aqui, no Linux com os módulos do Windows simulados: 693 testes
+Validação aqui, no Linux com os módulos do Windows simulados: 700 testes
 (65 do worker, todos passando), 4 falhas. São as mesmas de antes da mudança e dependem do comportamento do
 Windows (`test_hub_terminal` ×2, `test_telemetry_udp`, `test_transfer_chat`).
 No PC a suíte precisa passar inteira: o `build_release.ps1` para no primeiro
@@ -106,6 +108,24 @@ uma vez e confirme o UAC; pela sessão SSH de administrador também funciona:
 `powershell -ExecutionPolicy Bypass -File proteger_ollama.ps1`. Confira se o PC
 ainda está em `192.168.15.12`: com outro IP, o revisor para de alcançar o
 Ollama até a regra ser refeita.
+
+## Timer do ar a partir de 1 minuto
+
+O Denis pediu para desligar o ar em 10 minutos, e o hub só aceitava múltiplos
+de 30. Agora:
+
+- `notebook_power_server/air_timer.py` aceita qualquer minuto de 1 a 1440.
+- No APK, + e − do timer andam de 10 em 10 minutos até 1 hora e de 30 em 30
+  depois (mínimo 10). Compilei os fontes Java aqui com `javac` contra o
+  `android.jar` da API 35 e um `BuildConfig` simulado; o Gradle de verdade
+  continua com você.
+- Pela Nebula: "desliga o ar em 10 minutos", "em meia hora", "daqui a 1h30" e
+  "cancela o timer do ar" vão ao `POST /control` do hub (`air.timer`), com
+  `NEBULA_POWER_TOKEN` e os endereços de `pc_start_agent.NOTEBOOK_ENDPOINTS`.
+
+O timer de 10 minutos só funciona depois que o hub novo estiver no notebook
+(`deploy_notebook.ps1`) e o APK novo no A71. Na conferência, programe 10
+minutos pelo app e veja o cartão do ar mostrar "Desligamento agendado".
 
 ## Worker MCP do notebook
 

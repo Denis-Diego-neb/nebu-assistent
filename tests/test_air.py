@@ -59,6 +59,17 @@ class InterpretarComandoArTests(unittest.TestCase):
             with self.subTest(frase=frase):
                 self.assertEqual(interpretar_comando_ar(frase), esperado)
 
+    def test_timer_de_desligamento(self):
+        for frase, minutos in (
+            ("desliga o ar em 10 minutos", 10), ("desligue o ar em dez minutos", 10),
+            ("desliga o ar daqui a 10 min", 10), ("desliga o ar em 10", 10),
+            ("desligue o ar em meia hora", 30), ("desligue o ar em uma hora e meia", 90),
+            ("desligue o ar em 1h30", 90), ("programe o ar para desligar em 45 minutos", 45),
+            ("cancela o timer do ar", 0), ("cancele o desligamento do ar", 0),
+        ):
+            with self.subTest(frase=frase):
+                self.assertEqual(interpretar_comando_ar(frase), [PedidoAr("timer", minutos)])
+
     def test_perguntas_nao_enviam_comando(self):
         for frase in ("o ar está ligado?", "como está o ar", "qual a temperatura do ar", "o ar está em 22?"):
             with self.subTest(frase=frase):
@@ -69,9 +80,10 @@ class InterpretarComandoArTests(unittest.TestCase):
             "desligue o pc", "ligue o abajur", "ligue o ar e o abajur", "tomar um ar",
             "pesquise como ligar o ar condicionado", "anote ligar o ar amanha",
             "aprenda que ar gelado significa modo frio", "ar no modo turbo",
-            # O timer existe só no hub: horário não vira temperatura nem
-            # desligamento imediato.
-            "desligue o ar em 30 minutos", "desligue o ar às 22", "desligue o ar 22h",
+            # O hub só agenda desligamento por prazo: horário não vira
+            # temperatura nem desligamento imediato.
+            "desligue o ar às 22", "desligue o ar 22h", "ligue o ar em 10 minutos",
+            "desligue o ar daqui a pouco", "desligue o ar em 0 minutos",
         ):
             with self.subTest(frase=frase):
                 self.assertIsNone(interpretar_comando_ar(frase))
@@ -130,6 +142,29 @@ class ExecutarPedidosArTests(unittest.TestCase):
                 resultado = executar_pedidos_ar([PedidoAr("temperature", 35)], self.controle)
                 self.assertTrue(resultado.falhou)
                 self.assertEqual(resultado.mensagem, f"Não consegui controlar o ar. {erro}")
+
+    def test_timer_vai_para_o_hub_sem_infravermelho(self):
+        agendar = Mock()
+        resultado = executar_pedidos_ar([PedidoAr("timer", 90)], self.controle, agendar=agendar)
+        agendar.assert_called_once_with(90)
+        self.controle.executar.assert_not_called()
+        self.assertEqual(
+            resultado.mensagem,
+            "Pronto: o hub do notebook desliga o ar em 1 hora e 30 minutos. Mantenha o notebook ligado.",
+        )
+        self.assertEqual(
+            executar_pedidos_ar([PedidoAr("timer", 0)], self.controle, agendar=agendar).mensagem,
+            "Cancelei o timer do ar.",
+        )
+
+    def test_timer_sem_hub_ou_com_falha(self):
+        self.assertTrue(executar_pedidos_ar([PedidoAr("timer", 10)], self.controle).falhou)
+        resultado = executar_pedidos_ar(
+            [PedidoAr("timer", 10)], self.controle,
+            agendar=Mock(side_effect=RuntimeError("O hub do notebook não respondeu.")),
+        )
+        self.assertTrue(resultado.falhou)
+        self.assertIn("O hub do notebook não respondeu.", resultado.mensagem)
 
     def test_status_nao_envia_infravermelho(self):
         resultado = executar_pedidos_ar([PedidoAr("status")], self.controle)

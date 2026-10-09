@@ -36,8 +36,8 @@ class AirTimer:
             return result
 
     def set(self, minutes):
-        if isinstance(minutes, bool) or not isinstance(minutes, int) or minutes < 0 or minutes > 1440 or minutes % 30:
-            raise ValueError('Escolha de 30 minutos a 24 horas, em passos de 30; zero cancela.')
+        if isinstance(minutes, bool) or not isinstance(minutes, int) or minutes < 0 or minutes > 1440:
+            raise ValueError('Escolha de 1 minuto a 24 horas; zero cancela.')
         with self.lock:
             self.data.update(deadline=self.clock()+minutes*60 if minutes else None,
                              status='armed' if minutes else 'idle', error=None)

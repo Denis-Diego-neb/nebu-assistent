@@ -1,6 +1,9 @@
+import io
+import json
 import os
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
+from urllib.error import HTTPError, URLError
 
 from main import Nebula
 
@@ -71,6 +74,40 @@ class ComandoArPorVozTests(unittest.TestCase):
             self.nebula.executar("ligar o ar do quarto")
         nota.assert_called_once()
         self.ar.executar.assert_not_called()
+
+
+@patch.dict(os.environ, {"NEBULA_POWER_TOKEN": "token-de-teste-com-24-caracteres"})
+class TimerDoArPeloHubTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.saida = SaidaFalsa()
+        self.nebula = Nebula(self.saida, abrir_navegador=False)
+        self.nebula._controle_ar = Mock()
+
+    def test_timer_falado_vai_ao_hub_com_token(self) -> None:
+        resposta = MagicMock()
+        resposta.__enter__.return_value.read.return_value = b'{"ok": true}'
+        with patch("main.urlopen", return_value=resposta) as urlopen:
+            self.nebula.executar("desliga o ar em 10 minutos")
+        pedido = urlopen.call_args.args[0]
+        self.assertTrue(pedido.full_url.endswith("/control"))
+        self.assertEqual(json.loads(pedido.data), {"action": "air.timer", "value": 10})
+        self.assertEqual(pedido.get_header("X-nebula-power-token"), "token-de-teste-com-24-caracteres")
+        self.nebula._controle_ar.executar.assert_not_called()
+        self.assertIn("desliga o ar em 10 minutos", self.saida.mensagens[-1])
+
+    def test_tenta_o_proximo_endereco_e_fala_a_recusa_do_hub(self) -> None:
+        recusa = HTTPError("http://hub/control", 400, "Bad Request", {},
+                           io.BytesIO('{"error": "Escolha de 1 minuto a 24 horas; zero cancela."}'.encode()))
+        with patch("main.urlopen", side_effect=[URLError("offline"), recusa]) as urlopen:
+            self.nebula.executar("desliga o ar em 10 minutos")
+        self.assertEqual(urlopen.call_count, 2)
+        self.assertIn("Escolha de 1 minuto a 24 horas", self.saida.mensagens[-1])
+
+    def test_sem_token_nao_chama_o_hub(self) -> None:
+        with patch.dict(os.environ, {"NEBULA_POWER_TOKEN": ""}), patch("main.urlopen") as urlopen:
+            self.nebula.executar("desliga o ar em 10 minutos")
+        urlopen.assert_not_called()
+        self.assertIn("NEBULA_POWER_TOKEN", self.saida.mensagens[-1])
 
 
 if __name__ == "__main__":

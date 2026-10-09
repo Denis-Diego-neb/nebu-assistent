@@ -551,7 +551,11 @@ final class MobileDashboard {
         if (hasTimer) card.addView(mode);
         LinearLayout row = new LinearLayout(activity);
         for (int delta : new int[]{-1, 1}) row.addView(button(delta < 0 ? "−" : "+", () -> {
-            if (timerMode[0]) { minutes[0] = Math.max(30, Math.min(1440, minutes[0] + delta*30)); render.run(); return; }
+            if (timerMode[0]) {
+                // Até 1 h o timer anda de 10 em 10 minutos; depois, de 30 em 30.
+                int passo = (delta > 0 ? minutes[0] < 60 : minutes[0] <= 60) ? 10 : 30;
+                minutes[0] = Math.max(10, Math.min(1440, minutes[0] + delta*passo)); render.run(); return;
+            }
             if (!hasTemperature) { status.setText("Ajuste de temperatura ainda não configurado."); return; }
             run(status, () -> request(endpoint(false), "/universal/action", new JSONObject().put("device_id", "local:air").put("action", delta < 0 ? "temp_down" : "temp_up")),
                 result -> {
@@ -565,7 +569,7 @@ final class MobileDashboard {
             card.addView(button("Cancelar timer", () -> run(status,
                 () -> request(endpoint(false), "/universal/action", new JSONObject().put("device_id", "local:air").put("action", "timer_cancel")),
                 result -> { status.setText(result.optString("message")); schedule.setText(timerText(result.optJSONObject("timer"))); })));
-            card.addView(label("No timer, + e − ajustam 30 minutos. Toque em Programar para confirmar. Mantenha o notebook ligado; o celular pode ficar apagado.", 12, muted));
+            card.addView(label("No timer, + e − ajustam 10 minutos até 1 hora e 30 minutos depois. Toque em Programar para confirmar. Mantenha o notebook ligado; o celular pode ficar apagado.", 12, muted));
         }
         render.run();
     }

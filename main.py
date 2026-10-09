@@ -21,7 +21,9 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Iterator, Protocol
+from urllib.error import HTTPError
 from urllib.parse import quote_plus
+from urllib.request import Request, urlopen
 
 from app_launcher import Aplicativo, IniciadorAplicativos
 from abajur_wifi import ErroAbajur, interpretar_comandos_abajur
@@ -46,6 +48,7 @@ from core.legacy_actions import comando_canonico
 from core.bootstrap import criar_dispatcher
 from integrations.codex.client import CodexClient
 from config_modelo import qwen_ativa
+from pc_start_agent import NOTEBOOK_ENDPOINTS
 from lexicon import import_dictionary, learn, lookup
 from leitor_boost_visual import (
     ErroLeitorBoostVisual,
@@ -1935,13 +1938,45 @@ class Nebula:
         pedidos = interpretar_comando_ar(comando)
         if not pedidos:
             return False
-        mensagem = executar_pedidos_ar(pedidos, self._controle_ar).mensagem
+        mensagem = executar_pedidos_ar(
+            pedidos, self._controle_ar, agendar=self._agendar_desligamento_ar
+        ).mensagem
         if self.comando_pendente == "confirmar_desligar_pc":
             # Um pedido ao ar nunca confirma o desligamento do PC.
             self.comando_pendente = None
             mensagem += " O desligamento do PC foi cancelado."
         self.saida.falar(mensagem)
         return True
+
+    @staticmethod
+    def _agendar_desligamento_ar(minutos: int) -> None:
+        """Programa o timer no hub, que desliga o ar mesmo com o PC desligado."""
+        token = os.environ.get("NEBULA_POWER_TOKEN", "").strip()
+        if not token:
+            raise RuntimeError("Defina NEBULA_POWER_TOKEN para a Nebula falar com o hub do notebook.")
+        corpo = json.dumps({"action": "air.timer", "value": minutos}).encode("utf-8")
+        for endpoint in NOTEBOOK_ENDPOINTS:
+            pedido = Request(
+                endpoint + "/control", data=corpo, method="POST",
+                headers={
+                    "X-Nebula-Power-Token": token,
+                    "Content-Type": "application/json; charset=utf-8",
+                },
+            )
+            try:
+                with urlopen(pedido, timeout=3) as resposta:
+                    resposta.read()
+                return
+            except HTTPError as exc:
+                # O hub respondeu e recusou; outro endereço daria a mesma resposta.
+                try:
+                    erro = json.loads(exc.read().decode("utf-8")).get("error")
+                except (OSError, ValueError, AttributeError):
+                    erro = None
+                raise RuntimeError(str(erro or f"O hub recusou o pedido ({exc.code}).")) from exc
+            except OSError:
+                continue
+        raise RuntimeError("O hub do notebook não respondeu. Confira se ele está ligado.")
 
     def _executar_comando_abajur(self, comando: str) -> bool:
         pedidos = interpretar_comandos_abajur(comando)

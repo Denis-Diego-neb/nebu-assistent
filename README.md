@@ -522,9 +522,13 @@ de USB nem de ADB e continua disponível pelo hub quando o PC gamer está deslig
 Desde a 1.28.2, a Nebula também aceita o ar por voz ou texto, com ou sem a Qwen
 ativa: "liga o ar", "desliga o ar", "coloca o ar em 22 graus", "aumenta o ar",
 "ar no modo frio", "ventilação do ar forte" e "como está o ar?". "Desliga o ar"
-nunca cai no desligamento do PC, e "não desligue" cancela essa confirmação. O
-desligamento programado continua só no hub, então frases com horário ou minutos
-não são enviadas ao ar.
+nunca cai no desligamento do PC, e "não desligue" cancela essa confirmação.
+
+O timer de desligamento roda no hub do notebook, então desliga o ar mesmo com o
+PC desligado. Aceita qualquer prazo de 1 minuto a 24 horas: no app, + e −
+andam de 10 em 10 minutos até 1 hora e de 30 em 30 depois; pela Nebula, diga
+"desliga o ar em 10 minutos", "em meia hora" ou "daqui a 1h30", e "cancela o
+timer do ar". Horários ("às 22h") não são agendados.
 
 O controle de TVs ganhou ações simultâneas para todas as Samsung Tizen e LG
 webOS descobertas no Wi-Fi. Em **YouTube multiroom**, digite uma música, artista

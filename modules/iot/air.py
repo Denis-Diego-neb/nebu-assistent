@@ -1,8 +1,9 @@
 """Pedidos falados para o ar-condicionado, independentes da interface da Nebula.
 
 O módulo só traduz a frase para as ações do controle do Smart IR (`power`,
-`temperature`, `mode` e `fan`) e monta a resposta falada. A transmissão
-infravermelha continua no driver, e o host decide quando consultar o módulo.
+`temperature`, `mode` e `fan`) ou para o timer de desligamento, e monta a
+resposta falada. A transmissão infravermelha continua no driver, o timer roda
+no hub do notebook, e o host decide quando consultar o módulo.
 """
 
 from __future__ import annotations
@@ -10,12 +11,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 import unicodedata
-from typing import Protocol, Sequence
+from typing import Callable, Protocol, Sequence
 
 
 @dataclass(frozen=True)
 class PedidoAr:
-    """Ação do driver ou ajuste relativo (`temperature_delta`, `fan_delta`)."""
+    """Ação do driver, ajuste relativo (`temperature_delta`, `fan_delta`) ou
+    `timer` em minutos (zero cancela)."""
 
     acao: str
     valor: object = None
@@ -42,11 +44,23 @@ _OUTROS_PEDIDOS = re.compile(
     r"|\b(?:youtube|google|significa|significado)\b"
     r"|\bcomo (?:eu )?(?:ligo|ligar|desligo|desligar|uso|usar|configuro|configurar|funciona)\b"
 )
-# O desligamento programado existe só no hub do notebook; um horário nunca
-# pode virar temperatura nem um desligamento imediato.
+# O hub só agenda desligamento por prazo ("em 10 minutos"). Um horário ou um
+# "ligue daqui a pouco" nunca pode virar temperatura nem ação imediata.
 _AGENDAMENTO = re.compile(
     r"\b(?:minutos?|min|horas?|segundos?|daqui|amanha|timer|temporizador)\b"
     r"|\bas \d|\b\d{1,2}h\d{0,2}\b|\b\d{1,2}:\d{2}\b"
+)
+_PRAZO = re.compile(
+    r"\b(?:em|daqui(?: a)?|dentro de|depois de|apos)\s+(?:"
+    r"(?P<meia_hora>meia hora)"
+    r"|(?P<horas_curtas>\d{1,2})h(?P<minutos_curtos>\d{2})"
+    r"|(?P<horas>\d{1,2})\s*(?:horas?|h)\b(?:\s*e\s*(?:(?P<e_meia>meia)|(?P<e_minutos>\d{1,2})\s*(?:minutos?|min)?))?"
+    r"|(?P<minutos>\d{1,4})(?!\s*(?:graus?|°))(?:\s*(?:minutos?|min))?"
+    r")\b"
+)
+_CANCELAR_TIMER = re.compile(
+    r"\b(?:cancel\w*|desarm\w*|desfa\w*)\b.*\b(?:timer|temporizador|desligamento|agendamento)\b"
+    r"|\b(?:timer|temporizador)\b.*\bcancel\w*"
 )
 _DESLIGAR = re.compile(
     r"\b(?:desligue|desliga|desligar|apague|apaga|apagar|desative|desativa|desativar)\b"
@@ -116,8 +130,10 @@ _UNIDADES = {
     "cinco": 5, "seis": 6, "sete": 7, "oito": 8, "nove": 9,
 }
 _DEZENAS = {
-    "dezesseis": 16, "dezessete": 17, "dezoito": 18, "dezenove": 19,
-    "vinte": 20, "trinta": 30,
+    "dez": 10, "onze": 11, "doze": 12, "treze": 13, "quatorze": 14,
+    "catorze": 14, "quinze": 15, "dezesseis": 16, "dezessete": 17,
+    "dezoito": 18, "dezenove": 19, "vinte": 20, "trinta": 30,
+    "quarenta": 40, "cinquenta": 50,
 }
 
 _ROTULOS_MODO = {
@@ -138,8 +154,8 @@ def _normalizar(comando: str) -> str:
 def _numeros_por_extenso(texto: str) -> str:
     unidades = "|".join(_UNIDADES)
     texto = re.sub(
-        rf"\bvinte e ({unidades})\b",
-        lambda achado: str(20 + _UNIDADES[achado.group(1)]),
+        rf"\b(vinte|trinta|quarenta|cinquenta) e ({unidades})\b",
+        lambda achado: str(_DEZENAS[achado.group(1)] + _UNIDADES[achado.group(2)]),
         texto,
     )
     texto = re.sub(
@@ -147,10 +163,10 @@ def _numeros_por_extenso(texto: str) -> str:
         lambda achado: str(_DEZENAS[achado.group(1)]),
         texto,
     )
-    # Unidades isoladas só valem como graus ("aumente dois graus") ou como
-    # velocidade ("velocidade tres"); "um pouco" não é temperatura.
+    # Unidades isoladas só valem com unidade ("aumente dois graus", "uma
+    # hora") ou como velocidade ("velocidade tres"); "um pouco" não é número.
     texto = re.sub(
-        rf"\b({unidades}) (graus?)\b",
+        rf"\b({unidades}) (graus?|minutos?|horas?)\b",
         lambda achado: f"{_UNIDADES[achado.group(1)]} {achado.group(2)}",
         texto,
     )
@@ -159,6 +175,25 @@ def _numeros_por_extenso(texto: str) -> str:
         lambda achado: f"{achado.group(1)} {_UNIDADES[achado.group(2)]}",
         texto,
     )
+
+
+def _timer_dito(texto: str) -> int | None:
+    """Minutos até desligar, 0 para cancelar ou None quando não é timer."""
+    if _CANCELAR_TIMER.search(texto):
+        return 0
+    prazo = _PRAZO.search(texto) if _DESLIGAR.search(texto) else None
+    if not prazo:
+        return None
+    if prazo["meia_hora"]:
+        return 30
+    if prazo["horas_curtas"]:
+        return int(prazo["horas_curtas"]) * 60 + int(prazo["minutos_curtos"])
+    if prazo["horas"]:
+        extra = 30 if prazo["e_meia"] else int(prazo["e_minutos"] or 0)
+        return int(prazo["horas"]) * 60 + extra
+    minutos = int(prazo["minutos"])
+    # "Em 0 minutos" não pode virar cancelamento.
+    return minutos or None
 
 
 def _modo_dito(texto: str) -> str | None:
@@ -190,14 +225,14 @@ def _nivel_ventilacao(texto: str, inicio: int, fim: int) -> str | None:
 def interpretar_comando_ar(comando: str) -> list[PedidoAr] | None:
     """Traduz uma frase em pedidos ao ar, ou None quando ela não é para o ar."""
     texto = _normalizar(comando)
-    if (
-        not _ALVO.search(texto)
-        or _OUTROS_ALVOS.search(texto)
-        or _OUTROS_PEDIDOS.search(texto)
-        or _AGENDAMENTO.search(texto)
-    ):
+    if not _ALVO.search(texto) or _OUTROS_ALVOS.search(texto) or _OUTROS_PEDIDOS.search(texto):
         return None
     texto = _numeros_por_extenso(texto)
+    timer = _timer_dito(texto)
+    if timer is not None:
+        return [PedidoAr("timer", timer)]
+    if _AGENDAMENTO.search(texto):
+        return None
     if _DESLIGAR.search(texto):
         return [PedidoAr("power", False)]
     subir = bool(_SUBIR.search(texto))
@@ -292,14 +327,48 @@ def _resolver_relativo(pedido: PedidoAr, controle: ControleAr) -> tuple[str, obj
     return pedido.acao, pedido.valor
 
 
+def _duracao(minutos: int) -> str:
+    horas, resto = divmod(minutos, 60)
+    partes = []
+    if horas:
+        partes.append(f"{horas} hora" + ("s" if horas > 1 else ""))
+    if resto:
+        partes.append(f"{resto} minuto" + ("s" if resto > 1 else ""))
+    return " e ".join(partes)
+
+
+def _programar_timer(minutos: int, agendar: Callable[[int], object] | None) -> ResultadoAr:
+    if agendar is None:
+        return ResultadoAr("O timer do ar roda no hub do notebook, e esta Nebula não fala com ele.", falhou=True)
+    try:
+        agendar(minutos)
+    except (RuntimeError, ValueError, OSError) as exc:
+        return ResultadoAr(f"Não consegui programar o timer do ar. {exc}", falhou=True)
+    if not minutos:
+        return ResultadoAr("Cancelei o timer do ar.")
+    return ResultadoAr(
+        f"Pronto: o hub do notebook desliga o ar em {_duracao(minutos)}. Mantenha o notebook ligado."
+    )
+
+
 def _juntar(partes: list[str]) -> str:
     return partes[0] if len(partes) == 1 else ", ".join(partes[:-1]) + " e " + partes[-1]
 
 
-def executar_pedidos_ar(pedidos: Sequence[PedidoAr], controle: ControleAr) -> ResultadoAr:
-    """Envia os pedidos em ordem e informa também o que saiu antes de uma falha."""
+def executar_pedidos_ar(
+    pedidos: Sequence[PedidoAr],
+    controle: ControleAr,
+    agendar: Callable[[int], object] | None = None,
+) -> ResultadoAr:
+    """Envia os pedidos em ordem e informa também o que saiu antes de uma falha.
+
+    `agendar` recebe os minutos do timer (zero cancela) e fala com o hub.
+    """
     if not pedidos:
         return ResultadoAr("Nenhum comando foi enviado ao ar.", falhou=True)
+    if pedidos[0].acao == "timer":
+        # O timer sempre chega sozinho do interpretador.
+        return _programar_timer(int(pedidos[0].valor), agendar)  # type: ignore[arg-type]
     if any(pedido.acao == "status" for pedido in pedidos):
         return ResultadoAr(descrever_estado_ar(controle.estado()))
     ajustes: list[str] = []

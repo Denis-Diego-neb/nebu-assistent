@@ -37,8 +37,20 @@ class AirTimerTests(unittest.TestCase):
         self.timer.tick()
         self.air.executar.assert_not_called()
 
+    def test_aceita_minutos_quebrados(self):
+        for minutes in (1, 10, 45, 1440):
+            with self.subTest(minutes=minutes):
+                self.assertEqual(self.timer.set(minutes)['timer']['remaining_minutes'], minutes)
+        self.timer.set(10)
+        self.now += 599
+        self.timer.tick()
+        self.air.executar.assert_not_called()
+        self.now += 1
+        self.timer.tick()
+        self.air.executar.assert_called_once_with('power', False)
+
     def test_limites_e_falha_sem_sucesso_falso(self):
-        for value in (-30, 1, 31, 1470, True, '30', 30.0):
+        for value in (-30, -1, 1441, 1470, True, '30', 30.0):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 self.timer.set(value)
         self.timer.set(30)
