@@ -67,9 +67,9 @@ from memoria_nebula import (
 from modo_ambilight import CapturadorJanelaNetflix, ErroModoAmbilight, ModoAmbilight
 from lightbar_ds4 import DS4Lightbar, DS4LightbarError
 from modo_rpm import ErroModoBoost, ErroModoRPM, ModoBoost, ModoRPM
-from teclado_openrgb import OpenRGBKeyboardError, TecladoKumaraOpenRGB, criar_teclado_kumara
+from teclado_openrgb import OpenRGBKeyboardError, criar_teclado_kumara
 from teclado_attack_shark import AttackSharkError, AttackSharkX98HE
-from teclado_evision import TecladoKumaraUSB
+from teclados_rgb import TecladosRGB, abrir_teclados
 from notas import criar_e_abrir_nota
 from reconhecedor_musica import identificar_musica
 from youtube_player import primeiro_video
@@ -828,8 +828,8 @@ class Nebula:
         primeira = not self._independent
         alterados = {d for d in DEVICE_MODES if novo[d] != antigo[d] or d in self._device_errors}
 
-        # Efeitos nativos do Kumara mantêm o handle HID aberto para que
-        # TecladoKumaraUSB.close() não restaure o modo Reactive imediatamente.
+        # Os efeitos do firmware mantêm os teclados abertos: fechar restaura o
+        # modo anterior (Reactive no Kumara, o perfil salvo no Attack Shark).
         # Ao trocar qualquer ajuste do teclado, encerramos o handle anterior.
         if "keyboard" in alterados and self._keyboard_native_output is not None:
             native_output = self._keyboard_native_output
@@ -902,7 +902,7 @@ class Nebula:
         if "color" in novo["keyboard"]:
             self._cor_teclado_boost = self._cor_rgb(novo["keyboard"]["color"])
 
-        # Modos nativos do firmware EVision do Kumara.
+        # Efeitos do firmware dos teclados (Kumara USB e Attack Shark).
         #
         # "static" usa o caminho de cor uniforme. Os demais são enviados uma
         # única vez por efeito_nativo(), deixando a animação a cargo do próprio
@@ -914,7 +914,7 @@ class Nebula:
             output = None
 
             try:
-                keyboard = criar_teclado_kumara()
+                keyboard = self._abrir_teclados()
                 output = keyboard
 
                 cor = (
@@ -936,7 +936,7 @@ class Nebula:
                     efeito_nativo = getattr(output, "efeito_nativo", None)
                     if not callable(efeito_nativo):
                         raise OpenRGBKeyboardError(
-                            "Os efeitos nativos exigem o backend USB EVision do Kumara."
+                            "Este teclado não executa os efeitos do firmware."
                         )
 
                     # ExhaustFlash precisa saber qual é o efeito base para
@@ -1016,8 +1016,13 @@ class Nebula:
             self._flash_outputs[device] = output
         return output
 
+    def _abrir_teclados(self) -> TecladosRGB:
+        """Todos os teclados RGB conectados; o modo pedido agora fica com eles."""
+        self._parar_teclado_chuva()
+        return abrir_teclados(AttackSharkX98HE, criar_teclado_kumara)
+
     def _teclado_independente(self):
-        return self._com_flash("keyboard", criar_teclado_kumara())
+        return self._com_flash("keyboard", self._abrir_teclados())
 
     def _controle_independente(self):
         return self._com_flash("controller", DS4Lightbar())
@@ -1770,7 +1775,7 @@ class Nebula:
             if usar_abajur:
                 aviso_abajur = str(exc)
 
-        teclado: TecladoKumaraOpenRGB | TecladoKumaraUSB | None = None
+        teclado: TecladosRGB | None = None
         aviso_teclado: str | None = None
         if usar_teclado:
             try:
@@ -1858,11 +1863,14 @@ class Nebula:
             ):
                 if enabled and output is None:
                     self._device_errors[device] = warning or "Dispositivo indisponível."
+        nomes_teclado = tuple(getattr(teclado, "nomes", ("teclado",))) if teclado is not None else ()
+        quem = " e ".join(nomes_teclado)
+        acompanha = "acompanham" if len(nomes_teclado) > 1 else "acompanha"
         if teclado is not None and controle is not None:
             if modo_alvos == "beamng":
                 self.saida.falar(
                     "Modo BeamNG ativado. Abajur acompanha o ambiente externo; "
-                    "Kumara acompanha as cores da cabine."
+                    f"{quem} {acompanha} as cores da cabine."
                 )
             else:
                 comportamento_teclado = (
@@ -1872,12 +1880,13 @@ class Nebula:
                 )
                 self.saida.falar(
                     "Ambilight ativado. Lampada acompanha a media da tela; "
-                    f"Kumara acompanha {comportamento_teclado}."
+                    f"{quem} {acompanha} {comportamento_teclado}."
                 )
         elif teclado is not None:
             detalhe = f" {aviso_abajur}." if aviso_abajur else ""
             self.saida.falar(
-                "Ambilight ativado no Kumara; o abajur ficou de fora." + detalhe
+                "Ambilight ativado no " + " e no ".join(nomes_teclado)
+                + "; o abajur ficou de fora." + detalhe
             )
         elif controle is not None:
             detalhe = f" {aviso_teclado}." if aviso_teclado else ""
@@ -1929,6 +1938,7 @@ class Nebula:
         self._encerrar_modo_rpm()
         self._encerrar_modo_boost()
         self._encerrar_modo_ambilight()
+        self._parar_teclado_chuva()
 
         native_output = self._keyboard_native_output
         self._keyboard_native_output = None
@@ -2019,11 +2029,26 @@ class Nebula:
         # Solta o abajur para os relâmpagos do hub e o Attack Shark para o
         # Ambilight, como o hub já faz antes de mexer na lâmpada.
         self.executar_controle("mode", "manual")
+        self._pausar_afterfire_teclado()
         self._tela_chuva.abrir(str(url))
         aviso = self._iniciar_teclado_chuva()
         return "Modo chuva no PC: vídeo em tela cheia" + (
             f"; teclado de fora: {aviso}" if aviso else "; o Attack Shark acompanha a tela."
         )
+
+    def _pausar_afterfire_teclado(self) -> None:
+        """O afterfire do teclado no modo manual seguraria o Attack Shark a noite toda."""
+        saida = self._flash_only.pop("keyboard", None)
+        if saida is None:
+            return
+        if self._flash_outputs.get("keyboard") is saida:
+            self._flash_outputs.pop("keyboard", None)
+        try:
+            saida.close()
+        except (OSError, OpenRGBKeyboardError, AttackSharkError):
+            pass
+        # Teclado com erro entra no próximo ajuste de dispositivos, que reabre o afterfire.
+        self._device_errors["keyboard"] = "Afterfire do teclado em pausa pelo modo chuva."
 
     @staticmethod
     def _url_chuva_valida(url: object) -> bool:

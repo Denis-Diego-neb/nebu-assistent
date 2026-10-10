@@ -853,7 +853,7 @@ final class MobileDashboard {
 
     private void independentModes() {
         String[] devices={"lamp","keyboard","controller","mobile"};
-        String[] names={"Abajur","Kumara","Controle PS4 · USB","Telefone"};
+        String[] names={"Abajur","Teclado","Controle PS4 · USB","Telefone"};
         String[][] modes={{"manual","ambilight","beamng","music","torch","rpm","boost"},
             {"manual","ambilight","beamng","boost"},{"manual","ambilight","rpm","boost"},{"manual","rpm","turbo"}};
         android.widget.Spinner[] selectors=new android.widget.Spinner[4];

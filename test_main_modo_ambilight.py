@@ -4,6 +4,7 @@ from unittest.mock import patch, Mock
 from abajur_tuya import ConfiguracaoTuya, ControleAbajurTuya
 from abajur_wifi import ErroAbajur
 from main import Nebula, interpretar_comando_modo_ambilight
+from teclado_attack_shark import AttackSharkNotFoundError
 from teclado_openrgb import OpenRGBKeyboardError
 
 
@@ -131,6 +132,13 @@ class TecladoAmbilightFalso:
 class IntegracaoMainAmbilightTests(unittest.TestCase):
     def setUp(self) -> None:
         ModoAmbilightFalso.instancias.clear()
+        # Estes testes usam só o Kumara falso; nunca o Attack Shark de verdade no USB.
+        sem_attack_shark = patch(
+            "main.AttackSharkX98HE",
+            side_effect=AttackSharkNotFoundError("Attack Shark fora do teste."),
+        )
+        sem_attack_shark.start()
+        self.addCleanup(sem_attack_shark.stop)
         self.saida = SaidaFalsa()
         self.nebula = Nebula(self.saida, abrir_navegador=False)
         self.nebula._alvos_modo["ambilight"].update(

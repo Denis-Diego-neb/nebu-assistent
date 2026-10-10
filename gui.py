@@ -695,7 +695,7 @@ class InterfaceNebula:
         self.device_flash = {}
         tk.Label(pai, text="Cada dispositivo, seu modo", bg=fundo, fg="white",
                  font=("Segoe UI Semibold", 16)).pack(anchor="w", pady=(0, 12))
-        for device, name in (("lamp", "Abajur"), ("keyboard", "Kumara"),
+        for device, name in (("lamp", "Abajur"), ("keyboard", "Teclado"),
                              ("controller", "Controle PS4 · USB"), ("mobile", "Telefone")):
             row_painel = PainelArredondado(
                 pai, cor="#3b3b3f", raio=8, padding=10, altura_automatica=True

@@ -52,7 +52,7 @@ MODES = {
         "boost",
         "beamng",
 
-        # Modos executados diretamente pelo firmware do Kumara.
+        # Efeitos executados pelo firmware do teclado (Kumara USB e Attack Shark).
         *KEYBOARD_EFFECTS,
     ),
 
@@ -86,7 +86,7 @@ LABELS = {
     "beamng": "BeamNG: exterior / cabine",
     "turbo": "Pressão do turbo",
 
-    # Kumara / EVision
+    # Efeitos do firmware dos teclados
     "static": "Estático",
     "onda": "WRGB Wave",
     "onda_curta": "WRGB Wave rápida",

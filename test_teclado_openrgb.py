@@ -3,7 +3,20 @@ from unittest.mock import Mock, patch
 from types import SimpleNamespace
 
 from teclado_openrgb import _leds_acesos_barra, zonas_por_coluna, OpenRGBKeyboardError
-from teclado_openrgb import TecladoKumaraOpenRGB
+from teclado_openrgb import TecladoKumaraOpenRGB, criar_teclado_kumara
+
+
+class CriarTecladoKumaraTests(unittest.TestCase):
+    def test_sem_kumara_usb_so_usa_openrgb_que_ja_esta_no_ar_quando_pedido(self):
+        with patch("teclado_evision.encontrar_kumara", return_value=None), \
+                patch("teclado_openrgb.TecladoKumaraOpenRGB") as openrgb:
+            with patch("teclado_openrgb._server_online", return_value=False):
+                with self.assertRaises(OpenRGBKeyboardError):
+                    criar_teclado_kumara(iniciar_openrgb=False)
+                openrgb.assert_not_called()
+                self.assertIs(criar_teclado_kumara(), openrgb.return_value)
+            with patch("teclado_openrgb._server_online", return_value=True):
+                self.assertIs(criar_teclado_kumara(iniciar_openrgb=False), openrgb.return_value)
 
 
 class BarraBoostKumaraTests(unittest.TestCase):

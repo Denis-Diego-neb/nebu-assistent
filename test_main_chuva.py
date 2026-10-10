@@ -44,6 +44,17 @@ class ModoChuvaNoPcTests(unittest.TestCase):
         self.nebula._tela_chuva.fechar.assert_called_once()
         self.modo.parar.assert_called_once()
 
+    def test_afterfire_do_teclado_nao_segura_o_attack_shark_na_chuva(self) -> None:
+        afterfire = Mock()
+        self.nebula._independent = True
+        self.nebula._devices["keyboard"]["afterfire"] = True
+        self.nebula._flash_only["keyboard"] = self.nebula._flash_outputs["keyboard"] = afterfire
+        resposta = self.nebula.executar_controle("chuva.iniciar", {"url": URL})
+        afterfire.close.assert_called_once()
+        self.assertNotIn("keyboard", self.nebula._flash_only)
+        self.assertIn("modo chuva", self.nebula._device_errors["keyboard"])
+        self.assertIn("o Attack Shark acompanha a tela", resposta["message"])
+
     def test_sem_attack_shark_o_video_abre_mesmo_assim(self) -> None:
         from teclado_attack_shark import AttackSharkNotFoundError
 

@@ -335,12 +335,18 @@ class TecladoKumaraOpenRGB:
         self.close()
 
 
-def criar_teclado_kumara():
-    """Usa USB confirmado no 320F:5000; preserva OpenRGB em outros modelos."""
+def criar_teclado_kumara(*, iniciar_openrgb: bool = True):
+    """Usa USB confirmado no 320F:5000; preserva OpenRGB em outros modelos.
+
+    Com ``iniciar_openrgb=False``, sem o Kumara USB so procura no OpenRGB se o
+    servidor ja estiver no ar, em vez de abri-lo e esperar a resposta.
+    """
     from teclado_evision import TecladoKumaraUSB, encontrar_kumara
 
     info = encontrar_kumara()
     if info is None:
+        if not iniciar_openrgb and not _server_online():
+            raise OpenRGBKeyboardError("O Kumara nao esta conectado.")
         return TecladoKumaraOpenRGB()
     # O driver generico pode ficar preso esperando a resposta de troca de modo
     # que este firmware nao envia. Nao deixe dois escritores na mesma colecao HID.

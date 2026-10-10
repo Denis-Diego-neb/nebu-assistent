@@ -515,7 +515,7 @@ class ModoAmbilight:
                         self._saida_zonas(zonas)
                         self._zonas_enviadas = zonas
                     except Exception as exc:
-                        self._erro_secundaria = f"Falha ao atualizar a cor do Kumara: {exc}"
+                        self._erro_secundaria = f"Falha ao atualizar a cor do teclado: {exc}"
                         self._saida_zonas = None
                 if self._saida_controle is not None and (mudou or expirou):
                     try:
@@ -527,8 +527,8 @@ class ModoAmbilight:
                     try:
                         self._saida_secundaria(*cor_secundaria)
                         self._cor_secundaria_enviada = cor_secundaria
-                    except Exception:
-                        self._erro_secundaria = "O teclado perdeu a conexao com o OpenRGB."
+                    except Exception as exc:
+                        self._erro_secundaria = f"O teclado parou de responder: {exc}"
                         self._saida_secundaria = None
                 self._envios += 1
                 self._enviou_primeiro_quadro = True

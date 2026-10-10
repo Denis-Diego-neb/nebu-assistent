@@ -182,6 +182,32 @@ class ModoAmbilightTests(unittest.TestCase):
         self.assertFalse(modo.ativo)
         self.assertEqual(restauracoes, [True])
 
+    def test_teclado_que_para_de_responder_sai_e_a_lampada_continua(self) -> None:
+        envios: list[tuple[int, int, int]] = []
+
+        def teclado_desconectado(*_cor: int) -> None:
+            raise RuntimeError("O Attack Shark foi desconectado.")
+
+        modo = ModoAmbilight(
+            lambda *cor: envios.append(cor),
+            saida_secundaria=teclado_desconectado,
+            capturador=CapturadorFalso(),
+            capture_fps=60,
+            lamp_fps=20,
+        )
+        modo.iniciar()
+        try:
+            prazo = time.monotonic() + 2
+            while modo.status()["teclado"] != "erro" and time.monotonic() < prazo:
+                time.sleep(0.02)
+            status = modo.status()
+            self.assertEqual(status["teclado"], "erro")
+            self.assertIn("Attack Shark foi desconectado", status["erro_teclado"])
+            self.assertTrue(modo.ativo)
+            self.assertTrue(envios)
+        finally:
+            modo.parar()
+
 
 if __name__ == "__main__":
     unittest.main()

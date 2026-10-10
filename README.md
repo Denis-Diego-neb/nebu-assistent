@@ -379,14 +379,15 @@ alterar a cor preservada do abajur ou da lightbar.
 - boost intermediário: brilho proporcional;
 - boost cheio: 100% de brilho.
 
-No X98HE, zero boost usa o menor RGB que o firmware ainda consegue exibir. As
-mudanças são agrupadas em passos de 5% e usam o efeito estático, evitando o modo
-de feed proprietário que ficava apagado sem o Attack Shark IOT. O controle e o
-teclado são opcionais: se algum estiver desconectado, o abajur
-continua funcionando. O X98HE precisa estar conectado por cabo USB para expor o
-canal RGB. Ao parar o modo, minimizar o jogo ou perder o HUD, o brilho/efeito
-anterior é restaurado. Comandos: “Nebu, ative o modo boost”, “Nebu, status do
-modo boost” e “Nebu, pare o modo boost”.
+No Attack Shark X98HE, o teclado inteiro acende na cor pronta do firmware mais
+próxima da escolhida, em quatro níveis de brilho; zero boost fica no nível mais
+baixo, sem apagar. Ele usa o efeito estático, evitando o modo de feed
+proprietário que ficava apagado sem o Attack Shark IOT. Com os dois teclados
+conectados, os dois acompanham o boost. O controle e os teclados são opcionais:
+se algum estiver desconectado, o abajur continua funcionando. O X98HE precisa
+estar conectado por cabo USB para expor o canal RGB. Ao parar o modo, minimizar
+o jogo ou perder o HUD, o brilho/efeito anterior é restaurado. Comandos: “Nebu,
+ative o modo boost”, “Nebu, status do modo boost” e “Nebu, pare o modo boost”.
 
 O plugin x64 `NebulaBoost.dll`, em `native\nebula_boost`, continua disponível
 como alternativa para treino/offline com o BakkesMod. Com o Easy Anti-Cheat
@@ -495,7 +496,8 @@ ou da telemetria do PC gamer, como Ambilight, RPM e boost, são encaminhados par
 agente da Nebula no PC.
 
 No Ambilight, o abajur e a lightbar PS4 acompanham a média da tela principal.
-O Kumara acompanha os três blocos inferiores de uma grade 3 × 3. O modo
+O Kumara acompanha os três blocos inferiores de uma grade 3 × 3, e o Attack
+Shark X98HE, a cor média (veja **Teclados** abaixo). O modo
 **Ambilight + RPM** mantém a iluminação da tela e o painel RPM do celular juntos.
 
 O Kumara USB 320F:5000 usa envio direto com resposta de cada bloco de LEDs,
@@ -509,6 +511,48 @@ Redragon para usar a iluminação do Kumara.
 No celular, o modo Boost também oferece um display imersivo: a área iluminada
 sobe da base da tela conforme o boost, ocupando metade da tela em 50% e toda a
 tela em 100%. O toque em sair fecha apenas o display e preserva o modo ativo.
+
+## Teclados: Kumara e Attack Shark 1.28.2
+
+Todos os modos de teclado usam os teclados RGB conectados: o Redragon Kumara e o
+Attack Shark X98HE (por cabo USB). Vale para Ambilight, BeamNG, Ambilight + RPM,
+Boost, os efeitos do firmware em **Cada dispositivo, seu modo** (linha
+**Teclado**) e o flash de escapamento. Com só um conectado, a Nebula usa esse;
+com só o Attack Shark, ela não abre o OpenRGB para procurar o Kumara. Se um
+teclado parar de responder no meio do efeito, o outro continua.
+
+O X98HE só mostra sete cores prontas (vermelho, verde, azul, amarelo, roxo,
+ciano e azul-claro) em quatro níveis de brilho:
+
+- Ambilight: a cor pronta mais perto da tela, com o brilho da cena. Ele só troca
+  de cor quando a cena muda de verdade, para não piscar entre duas cores
+  vizinhas; em cena quase preta, só baixa o brilho. Com o Kumara junto no modo
+  de zonas, o X98HE recebe a média das zonas.
+- Cor fixa e efeitos com cor: a cor pronta mais perto da escolhida.
+- Efeitos do firmware: cada efeito do Kumara vira o efeito do X98HE mais
+  parecido:
+
+  | Nebula | X98HE |
+  | --- | --- |
+  | WRGB Wave, WRGB Wave rápida | Wave para a direita, normal e rápida (arco-íris) |
+  | Arco-íris vertical | Wave para baixo (arco-íris) |
+  | Color Cycle | Spectrum cycle |
+  | Breathing | Breathing |
+  | Reactive | Key shadow: a tecla acende ao ser apertada |
+  | Ripple | Ripple |
+  | Linha | Flow em zigue-zague |
+  | Estrelas | Star dots |
+  | Florescer, Arco-íris circular | Spring, na cor escolhida e em arco-íris |
+  | Furacão | Radiant (arco-íris girando) |
+  | Acumular | Layers |
+  | Visor | Sine wave |
+
+Ao sair do efeito, o X98HE volta ao perfil que tinha antes e o Kumara, ao modo
+reativo. O X98HE guarda a iluminação na memória do próprio teclado, então a
+Nebula só manda comando quando a cor ou o nível muda. No modo chuva, só o
+Attack Shark entra, como antes; se o flash de escapamento do teclado estiver
+ligado no modo manual, ele fica em pausa durante a noite e volta no próximo
+ajuste do teclado.
 
 ## Casa conectada 1.21
 
