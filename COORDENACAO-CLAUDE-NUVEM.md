@@ -17,20 +17,23 @@ instalei e não publiquei nada**. Deixei o código pronto no branch
 | `4af0716` | Modo chuva para dormir (hub, PC e APK), a pedido do Denis; veja a seção própria abaixo. |
 | `93d1b41` | Brave como navegador das telas (a lanterna do celular desse commit saiu no seguinte). |
 | `31f14da` | O relâmpago fica só no abajur: o Denis não quer a lanterna do celular. |
+| `68f53d8` | Os modos de teclado também no Attack Shark (Ambilight, BeamNG, Ambilight + RPM, Boost, efeitos e flash), a pedido do Denis; veja a seção própria abaixo. |
 
-Arquivos tocados: `main.py` (só `_executar_comando_ar`, a checagem em
-`executar`, a chamada antes do abajur e a ordem da confirmação de desligar o
-PC), `gui.py` (painel do ar), `ar_ir_direto.py` (`executar`), `versao.py`,
-`README.md`, `modules/README.md` e testes (`tests/test_air.py`,
-`test_main_ar.py`, `test_ar_ir_direto.py`). O merge do worker só cria
-`nebula_worker/`, `core/mcp/`, `core/jobs/`, `core/capabilities/`,
-`docs/MCP_GOAL.md`, `scripts/notebook_worker_*.py`, `tests/test_worker_*.py`
-e uma seção no `ARQUITETURA.md`. Em `android/`: o passo do timer e a seção
-Modo chuva em `MobileDashboard.java`, `ChuvaService.java`, `Trovao.java`, o
-ícone em `Icone.java` e permissões novas no manifest. Em `nebula_front/`, só o
-arquivo novo `chuva.html`. Nada em `services/collaboration/` ou `ai_sprints/`.
+Arquivos tocados (a lista exata sai do comando do passo 2): no PC,
+`main.py`, `gui.py`, `ar_ir_direto.py`, `modules/iot/air.py`, `modo_chuva.py`,
+`front_window.py`, `abajur_tuya.py`, `teclado_attack_shark.py`,
+`teclados_rgb.py` (novo), `teclado_openrgb.py`, `modo_ambilight.py`,
+`device_presets.py`, `contexto_nebula.md` e `versao.py`; no hub,
+`notebook_power_server/` (ar, Ollama e modo chuva) e `build_release.ps1`; em
+`nebula_front/`, só o arquivo novo `chuva.html`. Em `android/`: o passo do
+timer, a seção Modo chuva e o rótulo Teclado em `MobileDashboard.java`,
+`ChuvaService.java`, `Trovao.java`, o ícone em `Icone.java` e permissões novas
+no manifest. O merge do worker só cria `nebula_worker/`, `core/mcp/`,
+`core/jobs/`, `core/capabilities/`, `docs/MCP_GOAL.md`,
+`scripts/notebook_worker_*.py`, `tests/test_worker_*.py` e uma seção no
+`ARQUITETURA.md`. Nada em `services/collaboration/` ou `ai_sprints/`.
 
-Validação aqui, no Linux com os módulos do Windows simulados: 730 testes
+Validação aqui, no Linux com os módulos do Windows simulados: 758 testes
 (65 do worker, todos passando), 4 falhas. São as mesmas de antes da mudança e dependem do comportamento do
 Windows (`test_hub_terminal` ×2, `test_telemetry_udp`, `test_transfer_chat`).
 No PC a suíte precisa passar inteira: o `build_release.ps1` para no primeiro
@@ -57,6 +60,8 @@ teste vermelho.
 
    Se o `versao.py` local já estiver em 1.28.2 ou acima, use um número maior
    que o instalado: o deploy do hub espera o `/health` responder a versão nova.
+   O mesmo vale se a 1.28.2 já foi instalada a partir de um commit anterior
+   deste branch: suba para 1.28.3 antes de compilar.
 3. Exporte o token do escopo do usuário neste shell. O Gradle embute o token no
    APK, e o `deploy_notebook.ps1` aborta sem ele — e o deploy só roda depois de
    o EXE e o APK já estarem compilados:
@@ -94,6 +99,7 @@ teste vermelho.
 - Ar, no PC: "liga o ar", "coloca o ar em 22", "como está o ar?". "Desliga o ar"
   não pode perguntar se é para desligar o computador. Se o Smart IR não
   responder, o motivo aparece na fala e no status do painel do ar.
+- Teclados: veja a conferência na seção do Attack Shark abaixo.
 
 ## Ollama do notebook fechado para a rede
 
@@ -173,6 +179,48 @@ verdade e o serviço no A71. Na conferência, comece o modo pelo celular e
 confira: as duas telas com o mesmo vídeo, o abajur apagando, um trovão em até
 2,5 minutos (relâmpago no abajur e som no notebook e no celular) e o fim do modo
 ao desbloquear o celular.
+
+## Modos de teclado também no Attack Shark
+
+O Denis pediu os outros modos funcionando no Attack Shark X98HE, além do modo
+chuva. Antes, todos abriam só o Kumara (`criar_teclado_kumara`). Agora:
+
+- `teclados_rgb.py` (novo): `abrir_teclados` abre o Attack Shark e o Kumara e
+  devolve um `TecladosRGB`, que repassa cada comando aos que abriram. No
+  Ambilight multizona, o X98HE recebe a média das zonas; quem não tem efeitos
+  do firmware fica na cor escolhida; um teclado que para de responder sai do
+  grupo e o outro continua. Com o Attack Shark respondendo e sem o Kumara USB,
+  não abre o OpenRGB só para procurar o Kumara.
+- `teclado_attack_shark.py`: `efeito_nativo` com o efeito mais parecido do
+  firmware do X98HE (tabela no README), folga no `enviar_rgb` para não piscar
+  entre cores ou níveis vizinhos e um efeito por vez no teclado (como o
+  `_OWNER` do Kumara), para nenhum objeto restaurar o perfil errado.
+- `main.py`: Ambilight, BeamNG, Ambilight + RPM, Boost, os efeitos de "Cada
+  dispositivo, seu modo" e o flash de escapamento usam o grupo. Um novo modo no
+  teclado encerra o Ambilight do modo chuva; o modo chuva pausa o afterfire do
+  teclado no manual (senão o Attack Shark ficaria preso a noite toda).
+- A linha do teclado no desktop e no APK passa de "Kumara" para "Teclado".
+
+O protocolo veio do sharkfin (`docs/PROTOCOL.md` e
+`app/src-tauri/data/` do repositório dniminenn/sharkfin): o X98HE é o
+dispositivo 2964, família gen2, tabela de luz "K", velocidade 0..4 invertida e
+brilho 0..4. Para o arco-íris, o driver do fabricante manda a flag 7 neste
+teclado; o firmware dele não foi lido. Se os efeitos de arco-íris saírem numa
+cor só, troque `FLAG_ARCO_IRIS` para 8 em `teclado_attack_shark.py`. As cores
+fixas continuam pelas sete cores prontas (flags 0 a 6), o caminho que o Boost já
+usava no X98HE. O sharkfin avisa que o teclado guarda a iluminação na flash;
+por isso a Nebula só escreve quando a cor pronta ou o nível muda.
+
+**Não testado em hardware.** Na conferência, com o Attack Shark no cabo USB:
+
+- Ambilight com um vídeo: o teclado muda de cor com a cena, sem ficar piscando
+  entre duas cores. Ao parar, volta ao perfil de antes.
+- Boost no Rocket League: o teclado sobe e desce em quatro níveis, na cor
+  pronta mais perto da escolhida em Controle > Cor do teclado no Boost.
+- Cada dispositivo, seu modo → Teclado → WRGB Wave, Breathing e Reactive: o
+  efeito fica por conta do teclado (no Reactive, a tecla apertada acende);
+  voltar para Desativado restaura o perfil.
+- Com o Kumara também conectado, os dois acompanham cada um desses modos.
 
 ## Worker MCP do notebook
 
